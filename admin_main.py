@@ -33,6 +33,15 @@ def user_accept(chat_id, role):
         if user_data is None:
             print(f"Пользователь с chat_id {chat_id} не найден в списке ожидания.")
             return False
+
+        # Проверяем наличие класса
+        cursor.execute("SELECT class FROM classes WHERE class = ?", (user_data[2],))
+        class_exists = cursor.fetchone()
+
+        if class_exists is None:
+            print(f"Класс {user_data[2]} не найден.")
+            return False
+
         if user_data[5] is None:
             user_name = 'Нет имени пользователя'
         else:
@@ -44,7 +53,7 @@ def user_accept(chat_id, role):
 
         # Удаляем пользователя из списка ожидания
         cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
-
+        cursor.execute("UPDATE classes SET people = people + 1 WHERE class = ?", (user_data[2],))
         conn.commit()
         print(f"Пользователь с chat_id {chat_id} одобрен и перемещен в users.")
         return True
@@ -52,9 +61,9 @@ def user_accept(chat_id, role):
     except sqlite3.Error as e:
         print(f"Произошла ошибка SQL: {e}")
         bot.send_message(
-            chat_id = chat_id,
-            text = 'Произошла ошибка при регистрации, попробуйте еще раз',
-            reply_markup = create_keyboard_reg1()
+            chat_id=chat_id,
+            text='Произошла ошибка при регистрации, попробуйте еще раз',
+            reply_markup=create_keyboard_reg1()
         )
         return False
     finally:
@@ -67,6 +76,14 @@ def user_delete(chat_id):
     cursor = conn.cursor()
 
     try:
+        # Получаем информацию о пользователе для определения класса
+        cursor.execute("SELECT grade FROM users WHERE chat_id = ?", (chat_id,))
+        user_data = cursor.fetchone()
+
+        # Уменьшаем количество людей в классе на 1
+        if user_data is not None:
+            cursor.execute("UPDATE classes SET people = people - 1 WHERE class = ?", (user_data[0],))
+
         # Удаляем пользователя из таблицы users
         cursor.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
         
@@ -252,8 +269,6 @@ def show_classes (message):
 def create_class(message):
     admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите класс который хотите создать")
     admin_bot.register_next_step_handler(message, creating_class)
-
-
 
 @admin_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -460,8 +475,23 @@ def callback_handler(call):
         admin_bot.delete_message(chat_id=ADMIN_CHAT_ID, message_id=call.message.message_id)
     admin_bot.answer_callback_query(call.id)
 
+def delete_class(class_name):
+    conn = create_connection()
+    cursor = conn.cursor()
 
-    
+    try:
+        cursor.execute("DELETE FROM classes WHERE class = ?", (class_name,))
+        
+        cursor.execute("DELETE FROM users WHERE grade = ?", (class_name,))
+        
+        conn.commit()
+        print(f"Класс {class_name} и все его пользователи успешно удалены.")
+
+    except sqlite3.Error as e:
+        print(f"Произошла ошибка: {e}")
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == '__main__':
 

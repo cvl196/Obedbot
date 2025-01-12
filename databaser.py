@@ -430,9 +430,49 @@ def generate_attendance_report(start_date_str, end_date_str):
     report_df.to_excel(output_file, index=True, sheet_name='Attendance Report')
 
     return output_file
-drop_table('lunch_10_01_2025')
 
-                   
+def clean_table(table_name):
+    """
+    Очищает все записи в указанной таблице.
+    
+    Args:
+        table_name (str): Название таблицы для очистки.
+    
+    Returns:
+        bool: True если таблица успешно очищена, False если произошла ошибка.
+    """
+    conn = create_connection()
+    if conn is not None:
+        try:
+            cursor = conn.cursor()
+            
+            # Удаляем все записи из таблицы
+            cursor.execute(f"DELETE FROM {table_name}")
+            conn.commit()
+            print(f"Все записи из таблицы {table_name} успешно очищены.")
+            return True
+            
+        except Error as e:
+            print(f"Ошибка при очистке таблицы: {e}")
+            return False
+        finally:
+            conn.close()
+    return False
 
-
-
+def add_column(table_name, new_column, type): 
+    conn = create_connection()
+    if conn is not None:
+        try:
+            cursor = conn.cursor()
+            # Добавляем новый столбец в указанную таблицу
+            cursor.execute(f'ALTER TABLE {table_name} ADD COLUMN {new_column} {type}')
+            conn.commit()
+            print(f"Столбец {new_column} успешно добавлен в таблицу {table_name}.")
+            return True
+        except Error as e:
+            print(f"Ошибка при добавлении столбца: {e}")
+            return False
+        finally:
+            conn.close()
+    return False
+clean_table('lunch_13_01_2025')

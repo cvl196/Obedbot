@@ -463,7 +463,22 @@ def generate_attendance_report(start_date_str, end_date_str, grade):
     workbook.save(output_file)  # Сохраняем изменения в файле
     return output_file
 
-
+def add_last_msg(chat_id, last_msg): 
+    conn = create_connection()
+    if conn is not None:
+        try:
+            cursor = conn.cursor()
+            # Обновляем столбец last_msg для указанного chat_id
+            cursor.execute('''
+                UPDATE users 
+                SET last_msg = ? 
+                WHERE chat_id = ?
+            ''', (last_msg, chat_id))
+            conn.commit()
+        except Error as e:
+            print(f"Ошибка при добавлении последнего сообщения: {e}")
+        finally:
+            conn.close()
 
 def create_keyboard1():
     keyboard = telebot.types.InlineKeyboardMarkup()
@@ -565,32 +580,61 @@ def create_keyboard_classes_report():
     
     return keyboard
 
+def create_keyboard_classes_reg(): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""SELECT class FROM classes""")
+    classes = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    print (classes)
+    for cl in classes: 
+        keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_reg${cl[0]}"))
+    
+    return keyboard
+
 @bot.message_handler(commands=['start'])
 def start(message):
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
     date = tomorrow.strftime("%d.%m")
     
-    
     create_table(date)
-    if db_check_id(message.chat.id) and db_check_status_pupil(message.chat.id):
-        bot.send_message(
-            message.chat.id,
-            f"Добрый день, {message.chat.first_name}! Выберите действие:",
-            reply_markup=create_keyboard_main()
-        )
-    elif db_check_id(message.chat.id) and db_check_status_teacher(message.chat.id):
-        bot.send_message(
-            message.chat.id,
-            f"Добрый день, {message.chat.first_name} вы приняты в базу данных как учитель! Выберите действие:",
-            reply_markup=create_keyboard_main_teacher()
-        )
+    
+    # Проверяем, есть ли пользователь в базе данных
+    if db_check_id(message.chat.id):
+        last_msg = get_user_info(message.chat.id)  # Получаем информацию о пользователе
+        
+        
+        # Удаляем предыдущее сообщение, если оно существует
+        if last_msg[9]:  # Предполагаем, что last_msg находится в 6-й колонке
+            bot.delete_message(chat_id=message.chat.id, message_id=last_msg[9])  # Удаляем предыдущее сообщение
+        
+        
+        
+        if db_check_status_pupil(message.chat.id):
+            msg = bot.send_message(
+                message.chat.id,
+                f"Добрый день, {message.chat.first_name}! Выберите действие:",
+                reply_markup=create_keyboard_main()
+            )
+        elif db_check_status_teacher(message.chat.id):
+            msg = bot.send_message(
+                message.chat.id,
+                f"Добрый день, {message.chat.first_name} вы приняты в базу данных как учитель! Выберите действие:",
+                reply_markup=create_keyboard_main_teacher()
+            )
     else:
-        bot.send_message(
+        msg = bot.send_message(
             message.chat.id,
             f"Добрый день, {message.chat.first_name}! Для исползования бота, вам необходимо зарегестирвоваться",
             reply_markup=create_keyboard_reg1()
         )
+    last_msg = msg.message_id
+    add_last_msg(chat_id = message.chat.id, last_msg = last_msg)
+    
 
 # Обработчик callback-запросов
 @bot.callback_query_handler(func=lambda call: True)
@@ -643,7 +687,21 @@ def callback_handler(call):
 Льготник: {'Да' if winfo[7] else 'Нет' }""",
                 reply_markup=create_keyboard_accept_reject_block(call.message.chat.id)
             )
-        
+
+        elif call.data.startswith('class_reg$'): 
+            grade = call.data.split('$')[1]
+            bot.edit_message_text(chat_id = call.message.chat.id,
+                                  message_id = call.message.id, 
+                                  text = f'Вы указали класс {grade}')    
+            
+            add_user_waitlist(grade, 'grade', call.message.chat.id)
+            bot.send_message(
+                chat_id=call.message.chat.id,
+                text='Вы являетесь льготником?',
+                reply_markup=create_keyboard_priv()
+            )
+            bot.register_next_step_handler(call.message, get_priv)
+            
         else:             
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -675,6 +733,8 @@ def callback_handler(call):
                                 text = "Выберите класс для отчета",
                                 reply_markup = create_keyboard_classes_report())
             
+        
+
 
         elif call.data.startswith('class_report$'):
             grade = call.data.split('$')[1]
@@ -682,9 +742,8 @@ def callback_handler(call):
                                   message_id = call.message.id,
                              text=f"Введите промежуток времени для отчета {grade} через тире например (09.01.2025-09.04.2025)")
             bot.register_next_step_handler(call.message, get_report, grade)
-
-            
-   
+           
+  
     elif db_check_id(call.message.chat.id) and db_check_status_pupil(call.message.chat.id):
         
         if call.data == "yes":
@@ -797,6 +856,7 @@ def callback_handler(call):
                 text=f"Добрый день, {call.message.chat.first_name}! Выберите действие:",
                 reply_markup=create_keyboard_main()
             )
+        
 
     bot.answer_callback_query(call.id)
 
@@ -827,22 +887,10 @@ def get_last_name(message):
     add_user_waitlist(last_name, 'last_name', message.chat.id)
     bot.send_message(
         message.chat.id, 
-        'Ведите ваш класс', 
-        
+        'Укажите ваш класс', 
+        reply_markup = create_keyboard_classes_reg()
     )
-    bot.register_next_step_handler(message, get_grade)
-
-def get_grade(message):
-    grade = message.text.upper()
     
-    
-    add_user_waitlist(grade, 'grade', message.chat.id)
-    bot.send_message(
-        chat_id = message.chat.id,
-        text = 'Вы являетесь льготником?',
-        reply_markup = create_keyboard_priv()
-    )
-    bot.register_next_step_handler(message, get_priv)
 
 def get_priv(message):
     priv = 0
