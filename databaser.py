@@ -476,4 +476,46 @@ def add_column(table_name, new_column, type):
         finally:
             conn.close()
     return False
-drop_table('lunch_14_01_2025')
+
+def user_delete(chat_id):
+    """Удаляет пользователя из таблицы users по chat_id."""
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Получаем информацию о пользователе для определения класса
+        cursor.execute("SELECT grade FROM users WHERE chat_id = ?", (chat_id,))
+        user_data = cursor.fetchone()
+
+        # Уменьшаем количество людей в классе на 1
+        if user_data is not None:
+            cursor.execute("UPDATE classes SET people = people - 1 WHERE class = ?", (user_data[0],))
+
+        # Удаляем пользователя из таблицы users
+        cursor.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
+        
+        # Проверяем количество удаленных строк
+        if cursor.rowcount == 0:
+            print(f"No user found with chat_id {chat_id}.")
+        else:
+            print(f"User with chat_id {chat_id} has been deleted.")
+
+        # Сохраняем изменения
+        conn.commit()
+
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Закрываем соединение
+        cursor.close()
+        conn.close()
+
+def oneuse():
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (None, "791669507"))
+    conn.commit()    
+    cursor.close()
+    conn.close()
+
+add_column('users', 'send_teacher', 'BOOLEAN')

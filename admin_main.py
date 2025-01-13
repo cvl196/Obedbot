@@ -305,12 +305,29 @@ def callback_handler(call):
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }"""
             )
-            
-            bot.send_message(
+            conn = create_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
+            last_msg = cursor.fetchone()
+            if not last_msg: 
+                bot.delete_message(chat_id=chat_id, 
+                                   message_id = last_msg)
+
+
+
+            tmp_msg = bot.send_message(
                 chat_id=chat_id,
                 text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
                 reply_markup=create_keyboard_back()
             )
+            tmp_msg = tmp_msg.message_id
+            
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
+            conn.commit()
+            conn.close()
+
+
+
         else:
             admin_bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -437,7 +454,8 @@ def callback_handler(call):
 Класс: {winfo[4]}
 Статус: {status}
 Телефон: {winfo[5]}
-Имя пользователя: {winfo[7]}""",
+Имя пользователя: {winfo[7]}
+Льготник: {'Да' if winfo[8] else 'Нет' }""",
                                reply_markup=create_keyboard_profile(chat_id))
         
     elif call.data.startswith('delete_class$'): 
@@ -458,7 +476,6 @@ def callback_handler(call):
                                      text=f'Вы успешно удалили {cl_name}',
                                      reply_markup=create_keyboard_close())
         
-    
     elif call.data.startswith('class$'): 
         print(call.data)
         cl_name = call.data.split('$')[1]
@@ -492,9 +509,7 @@ def callback_handler(call):
                                   text=f"""Вы уверены, что хотите удалить класс? 
 При удалении класса также будут удалены все ученики, относящиеся к нему""",
                                   reply_markup=create_keyboard_class_accept(cl_name))
-        
-       
-    
+          
     elif call.data == 'close':
         admin_bot.delete_message(chat_id=ADMIN_CHAT_ID, message_id=call.message.message_id)
     

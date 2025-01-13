@@ -63,3 +63,17 @@ for user in users_to_send:
     cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (message.message_id, user))
     conn.commit()
 
+cursor.execute (f"SELECT chat_id FROM users WHERE status = ?", ("teacher",) )
+teachers = cursor.fetchall()
+for teacher in teachers:      
+   
+    
+    cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (False, teacher[0]))
+    
+
+
+conn.commit()
+
+cursor.close()
+conn.close()
+

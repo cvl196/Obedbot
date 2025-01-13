@@ -150,9 +150,9 @@ def db_get_lunch_info_teacher(table_name, clas):
             
             formatted_results = []
             for name, will_eat in results:
-                status = "Обедает" if will_eat else "Не обедает"
+                status = "✅" if will_eat else "❌"
                 formatted_results.append(f"{name} - {status}")
-            info = "\n".join(formatted_results) if formatted_results else "Нет данных"
+            
 
             cursor.execute("SELECT people FROM classes WHERE class = ?", (clas,))
             people_in_class = cursor.fetchone()[0] 
@@ -162,7 +162,32 @@ def db_get_lunch_info_teacher(table_name, clas):
             people = cursor.fetchall() 
             voted_people = len(people) ### 2 - льготник 3 - обеды
             print(people)
-            info = info + f"Проголосовало {voted_people} из {people_in_class}"
+
+            eat_no = 0
+            eat_yes = 0
+            eat_priv = 0
+            for person in people: 
+                if person[2] == 1: 
+                    if person[1] == 1: 
+                        eat_priv += 1
+                    elif person[1] == 0: 
+                        eat_yes +=1
+                else: 
+                    eat_no +=1 
+            
+            info = ""
+
+            info = info + f"{eat_yes} обедают\n{eat_priv} обедают как льготники \n{eat_no} не обедают" if formatted_results else "Нет данных"
+            
+            info = info + f"\nПроголосовало {voted_people} из {people_in_class}\n"
+            
+            info = info + "----------------------------------------------\n"
+
+            info = info + "\n".join(formatted_results) 
+
+            
+
+
             return info 
             
         except Error as e:
@@ -203,7 +228,7 @@ def create_table(date):
             conn.close()
     return None
 
-def add_lunch_record(table_name, chat_id, will_eat, will_attend=None, reason=None):
+def add_lunch_record(table_name, chat_id, will_eat, date, will_attend=None, reason=None):
     if isinstance(will_eat, str):
         will_eat = will_eat.lower() == "да"
     if isinstance(will_attend, str) and will_attend is not None:
@@ -215,9 +240,11 @@ def add_lunch_record(table_name, chat_id, will_eat, will_attend=None, reason=Non
     
     conn = create_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT first_name, last_name FROM users WHERE chat_id = ?", (chat_id,))
+    cursor.execute("SELECT first_name, last_name, grade FROM users WHERE chat_id = ?", (chat_id,))
     name_record = cursor.fetchone()
     name = f"{name_record[0]} {name_record[1]}" 
+    clas = name_record [2]
+    
     cursor.close()
 
     if conn is not None:
@@ -255,11 +282,41 @@ def add_lunch_record(table_name, chat_id, will_eat, will_attend=None, reason=Non
                     VALUES (?, ?, ?, ?, ?)
                 ''', (chat_id, name, will_eat, will_attend if will_attend is not None else False, reason))
             
+            cursor.execute(f"SELECT chat_id FROM {table_name}")
+            voted_people = len(cursor.fetchall())
+            cursor.execute(f"SELECT people FROM classes WHERE class = ?", (clas,))
+            people = cursor.fetchone()[0]
+            
+            if people == voted_people: 
+                cursor.execute (f"SELECT chat_id, send_teacher FROM users WHERE grade = ? and status = ?", (clas,"teacher") )
+                teachers = cursor.fetchall()
+                for teacher in teachers:
+                    if teacher[1]!=1: 
+                        lunch_info = db_get_lunch_info_teacher(table_name=table_name, clas=clas)
+                        cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?",(teacher[0],))
+                        last_msg = cursor.fetchone()[0]
+                        if last_msg: 
+                            bot.delete_message(chat_id = teacher[0], 
+                                                message_id = last_msg)
+                        tmp_msg = bot.send_message(
+                            chat_id=teacher[0],                        
+                            text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
+                            reply_markup=create_keyboard_back(),
+                            parse_mode='HTML'
+                        )
+                        cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (True, teacher[0]))
+                        cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg.message_id, teacher[0]))
+                    
+                    
+
+
+
             conn.commit()
         except Error as e:
             print(f"Ошибка при добавлении записи: {e}")
         finally:
             conn.close()
+            
 
 def get_lunch_info(chat_id, today=False):
     
@@ -587,6 +644,7 @@ def create_keyboard_main():
     keyboard.add(telebot.types.InlineKeyboardButton("Проголосовать на завтра", callback_data="vote"))
     keyboard.add(telebot.types.InlineKeyboardButton("Информация о обедах завтра", callback_data="vote_info"))
     keyboard.add(telebot.types.InlineKeyboardButton("Информация о обедах на сегодня", callback_data="vote_info_today"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Мой профиль", callback_data="profile_user"))
     return keyboard
 
 def create_keyboard_phone():
@@ -800,9 +858,11 @@ def callback_handler(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"Обеды {date}\n{lunch_info}",
-                reply_markup=create_keyboard_back()
+                text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
+                reply_markup=create_keyboard_back(),
+                parse_mode='HTML'
             )
+
         elif call.data == "back":
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -832,7 +892,8 @@ def callback_handler(call):
             add_lunch_record(
                 table_name,
                 call.message.chat.id,
-                True
+                True,
+                date = date
             )
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -884,7 +945,8 @@ def callback_handler(call):
                 table_name,
                 call.message.chat.id,
                 False,
-                True
+                True,
+                date = date
             )
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -922,7 +984,8 @@ def callback_handler(call):
                 call.message.chat.id,
                 False,
                 False,
-                "doc"
+                "doc",
+                date=date
             )
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -938,6 +1001,25 @@ def callback_handler(call):
                 text=f"Добрый день, {call.message.chat.first_name}! Выберите действие:",
                 reply_markup=create_keyboard_main()
             )
+        
+        elif call.data == "profile_user": 
+            chat_id = call.message.chat.id
+            winfo = get_user_info(chat_id)
+            if winfo[6] == 'teacher':
+                status = 'Учитель'
+            else:
+                status = 'Ученик'
+            
+            bot.edit_message_text (chat_id=chat_id, 
+                                        message_id=call.message.message_id,
+                                   text=f"""Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Статус: {status}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}
+Льготник: {'Да' if winfo[8] else 'Нет' }""",
+                                        reply_markup = create_keyboard_back())
         
 
     bot.answer_callback_query(call.id)
