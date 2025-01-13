@@ -1,7 +1,7 @@
 import telebot
 import pytz
 from datetime import datetime, timedelta
-from main import create_connection, create_keyboard_main, create_keyboard1
+from main import create_connection, create_keyboard_main, create_keyboard1,db_check_status_pupil
 import sqlite3
 
 TOKEN = '7631925603:AAGPVkbTAWWZREyoV9IJVa_WhAP5lgdbe64'
@@ -29,7 +29,7 @@ cursor.execute(f"""SELECT chat_id FROM {table_name}""")
 voted_users = cursor.fetchall()
 
 for user in users: 
-    if user not in voted_users: 
+    if user not in voted_users and db_check_status_pupil(user[0]): 
         users_to_send.append(user[0])
 
 
@@ -44,10 +44,16 @@ elif 21 <= current_hour < 23:
     greeting = "Доброй ночи"
 else:
     greeting = "Здравствуйте"  
-
+print(users_to_send)
 for user in users_to_send: 
     last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0] 
-    bot.delete_message(chat_id=user, message_id=last_msg)  
+    if last_msg:  
+        try:
+            bot.delete_message(chat_id=user, message_id=last_msg)  
+        except Exception as e:
+            print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  # Логируем ошибку
+    else:
+        print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
     message = bot.send_message(chat_id=user, 
                      text=f"""{greeting}, проголосуйте пожалуйста
 Вы будете завтра обедать?""",

@@ -53,7 +53,8 @@ def user_accept(chat_id, role):
 
         # Удаляем пользователя из списка ожидания
         cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
-        cursor.execute("UPDATE classes SET people = people + 1 WHERE class = ?", (user_data[2],))
+        if role == 'pupil':
+            cursor.execute("UPDATE classes SET people = people + 1 WHERE class = ?", (user_data[2],))
         conn.commit()
         print(f"Пользователь с chat_id {chat_id} одобрен и перемещен в users.")
         return True
@@ -153,6 +154,7 @@ def unblocking_user(message):
     unblock_user(info)
     admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"Пользователь {info} разблокирован")
 
+
 def create_keyboard_users(users):
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
     for user in users:
@@ -194,6 +196,12 @@ def create_keyboard_classes():
     return keyboard
 
 def create_keyboard_class(name): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Удалить", callback_data=f"delete_class_accept${name}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Отмена", callback_data="close"))
+    return keyboard
+
+def create_keyboard_class_accept(name): 
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(telebot.types.InlineKeyboardButton(text="Удалить", callback_data=f"delete_class${name}"))
     keyboard.add(telebot.types.InlineKeyboardButton(text="Отмена", callback_data="close"))
@@ -436,18 +444,21 @@ def callback_handler(call):
         cl_name = call.data.split('$')[1] 
         conn = create_connection()
         cursor = conn.cursor()
+        
+        # Удаляем всех пользователей с grade, совпадающим с названием класса
+        cursor.execute("DELETE FROM users WHERE grade = ?", (cl_name,))
+        
         cursor.execute("DELETE FROM classes WHERE class = ?", (cl_name,))
         conn.commit()
         cursor.close()
         conn.close()
-        admin_bot.edit_message_text(chat_id = ADMIN_CHAT_ID,
-                               message_id = call.message.message_id, 
-                               text = f'Вы успешно удалили {cl_name}',
-                               reply_markup = create_keyboard_close())
-
-
-
-
+        
+        admin_bot.edit_message_text(chat_id=ADMIN_CHAT_ID,
+                                     message_id=call.message.message_id, 
+                                     text=f'Вы успешно удалили {cl_name}',
+                                     reply_markup=create_keyboard_close())
+        
+    
     elif call.data.startswith('class$'): 
         print(call.data)
         cl_name = call.data.split('$')[1]
@@ -471,8 +482,22 @@ def callback_handler(call):
             text=f'Класс {cl_name}, количество человек {people_count}',  # Используем people_count
             reply_markup=create_keyboard_class(cl_name)
         )
+    
+    elif call.data.startswith('delete_class_accept$'):
+        cl_name = call.data.split('$')[1]
+        
+        
+        admin_bot.edit_message_text(chat_id=call.message.chat.id, 
+                                  message_id=call.message.message_id, 
+                                  text=f"""Вы уверены, что хотите удалить класс? 
+При удалении класса также будут удалены все ученики, относящиеся к нему""",
+                                  reply_markup=create_keyboard_class_accept(cl_name))
+        
+       
+    
     elif call.data == 'close':
         admin_bot.delete_message(chat_id=ADMIN_CHAT_ID, message_id=call.message.message_id)
+    
     admin_bot.answer_callback_query(call.id)
 
 def delete_class(class_name):

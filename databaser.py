@@ -116,7 +116,8 @@ def add_user(first_name, last_name, grade, phone, chat_id, status,user_name):
         try:
             cursor = conn.cursor()
             
-            # Проверяем существование таблицы users
+            
+            
             cursor.execute(''' 
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -475,4 +476,4 @@ def add_column(table_name, new_column, type):
         finally:
             conn.close()
     return False
-clean_table('lunch_13_01_2025')
+drop_table('lunch_14_01_2025')

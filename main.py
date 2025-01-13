@@ -32,13 +32,68 @@ def create_connection():
         return None
 
 def init_db():
-    """Инициализация базы данных при запуске"""
-    if not os.path.exists(DB_PATH):
-        conn = create_connection()
-        if conn:
-            conn.close()
-        print("База данных создана")
     
+    
+    if not os.path.exists(DB_PATH):
+        # Создаем пустую базу данных
+        open(DB_PATH, 'a').close()
+        print("База данных создана")
+
+    conn = create_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Проверяем наличие таблицы users
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    first_name TEXT,
+                    last_name TEXT,
+                    grade TEXT,
+                    phone TEXT,
+                    status TEXT,
+                    user_name TEXT,
+                    privil BOOLEAN,
+                    last_msg INTEGER
+                    
+                )
+            ''')
+            # Проверяем наличие таблицы classes
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS classes (
+                    class TEXT PRIMARY KEY,
+                    people INTEGER
+                )
+            ''')
+            # Проверяем наличие таблицы users_waitlist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users_waitlist (
+                    chat_id INTEGER PRIMARY KEY,
+                    first_name TEXT,
+                    last_name TEXT,
+                    grade TEXT,
+                    phone TEXT,
+                    status TEXT,
+                    user_name TEXT,
+                    privil BOOLEAN
+                )
+            ''')
+            # Проверяем наличие таблицы blocked_users
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS blocked_users (
+                    chat_id INTEGER PRIMARY KEY,
+                    user_name TEXT,
+                    phone TEXT
+                )
+            ''')
+            conn.commit()
+            print("База данных и таблицы инициализированы")
+        except Error as e:
+            print(f"Ошибка при инициализации базы данных: {e}")
+        finally:
+            conn.close()
+
 def db_check_id(chat_id):
     conn = create_connection()
     if conn:
@@ -85,7 +140,7 @@ def db_check_status_teacher(chat_id):
             
             return False
 
-def db_get_lunch_info_teacher(table_name):
+def db_get_lunch_info_teacher(table_name, clas):
     conn = create_connection()
     if conn is not None:
         try:
@@ -97,12 +152,22 @@ def db_get_lunch_info_teacher(table_name):
             for name, will_eat in results:
                 status = "Обедает" if will_eat else "Не обедает"
                 formatted_results.append(f"{name} - {status}")
-            
-            return "\n".join(formatted_results) if formatted_results else "Нет данных"
+            info = "\n".join(formatted_results) if formatted_results else "Нет данных"
+
+            cursor.execute("SELECT people FROM classes WHERE class = ?", (clas,))
+            people_in_class = cursor.fetchone()[0] 
+
+
+            cursor.execute(f"SELECT users.chat_id, users.privil, {table_name}.will_eat FROM users INNER JOIN {table_name} ON users.chat_id = {table_name}.chat_id WHERE grade = ?", (clas,))
+            people = cursor.fetchall() 
+            voted_people = len(people) ### 2 - льготник 3 - обеды
+            print(people)
+            info = info + f"Проголосовало {voted_people} из {people_in_class}"
+            return info 
             
         except Error as e:
             print(f"Ошибка при получении данных: {e}")
-            return "Ошибка при получении данных"
+            return "Никто еще не проголосовал, ожидайте"
         finally:
             conn.close()
     return "Ошибка подключения к базе данных"
@@ -122,6 +187,7 @@ def create_table(date):
                     CREATE TABLE {table_name} (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         chat_id INTEGER NOT NULL,
+                        name TEXT,
                         will_eat BOOLEAN NOT NULL,
                         will_attend BOOLEAN,
                         reason TEXT
@@ -148,6 +214,12 @@ def add_lunch_record(table_name, chat_id, will_eat, will_attend=None, reason=Non
         reason = None
     
     conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT first_name, last_name FROM users WHERE chat_id = ?", (chat_id,))
+    name_record = cursor.fetchone()
+    name = f"{name_record[0]} {name_record[1]}" 
+    cursor.close()
+
     if conn is not None:
         try:
             cursor = conn.cursor()
@@ -160,6 +232,7 @@ def add_lunch_record(table_name, chat_id, will_eat, will_attend=None, reason=Non
                     CREATE TABLE "{table_name}" (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         chat_id INTEGER NOT NULL,
+                        name TEXT,
                         will_eat BOOLEAN NOT NULL,
                         will_attend BOOLEAN,
                         reason TEXT
@@ -173,14 +246,14 @@ def add_lunch_record(table_name, chat_id, will_eat, will_attend=None, reason=Non
             if existing_record:
                 cursor.execute(f'''
                     UPDATE {table_name}
-                    SET will_eat = ?, will_attend = ?, reason = ?
+                    SET will_eat = ?, will_attend = ?, reason = ?, name = ? 
                     WHERE chat_id = ?
-                ''', (will_eat, will_attend, reason, chat_id))
+                ''', (will_eat, will_attend, reason, name, chat_id, ))
             else:
                 cursor.execute(f'''
-                    INSERT INTO {table_name} (chat_id, will_eat, will_attend, reason)
-                    VALUES (?, ?, ?, ?)
-                ''', (chat_id, will_eat, will_attend, reason))
+                    INSERT INTO {table_name} (chat_id, name, will_eat, will_attend, reason)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (chat_id, name, will_eat, will_attend if will_attend is not None else False, reason))
             
             conn.commit()
         except Error as e:
@@ -577,7 +650,7 @@ def create_keyboard_classes_report():
     print (classes)
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_report${cl[0]}"))
-    
+    keyboard.add(telebot.types.InlineKeyboardButton(text=f"Назад", callback_data=f"back"))
     return keyboard
 
 def create_keyboard_classes_reg(): 
@@ -712,14 +785,24 @@ def callback_handler(call):
             
     elif db_check_status_teacher(call.message.chat.id) and db_check_id(call.message.chat.id):
         if call.data == "get_lunch_info_teacher":
-            lunch_info = db_get_lunch_info_teacher(table_name=table_name)
+            chat_id = call.message.chat.id
+            
+            conn = create_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT grade FROM users WHERE chat_id = ?", (chat_id,))
+            result = cursor.fetchone()  # Сохраняем результат в переменной
+            clas = result[0] if result else None  # Проверяем, есть ли результат
+            cursor.close()
+            conn.close()
+
+            lunch_info = db_get_lunch_info_teacher(table_name=table_name, clas=clas)
             
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-            text=f"Обеды {date}\n{lunch_info}",
-            reply_markup=create_keyboard_back()
-        )
+                text=f"Обеды {date}\n{lunch_info}",
+                reply_markup=create_keyboard_back()
+            )
         elif call.data == "back":
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -742,8 +825,7 @@ def callback_handler(call):
                                   message_id = call.message.id,
                              text=f"Введите промежуток времени для отчета {grade} через тире например (09.01.2025-09.04.2025)")
             bot.register_next_step_handler(call.message, get_report, grade)
-           
-  
+             
     elif db_check_id(call.message.chat.id) and db_check_status_pupil(call.message.chat.id):
         
         if call.data == "yes":
@@ -887,7 +969,7 @@ def get_last_name(message):
     add_user_waitlist(last_name, 'last_name', message.chat.id)
     bot.send_message(
         message.chat.id, 
-        'Укажите ваш класс', 
+        'Выберите ваш класс ниже', 
         reply_markup = create_keyboard_classes_reg()
     )
     
@@ -958,5 +1040,5 @@ def get_report(message, grade):
 
 
 if __name__ == '__main__':
-
+    init_db()
     bot.polling(none_stop=True)
