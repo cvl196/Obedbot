@@ -1,3 +1,8 @@
+import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'   
+
+
+
 import telebot
 from datetime import datetime, timedelta
 import pytz
@@ -8,6 +13,7 @@ import pandas as pd
 from openpyxl.utils import get_column_letter  # Импортируем функцию для получения букв столбцов
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Side  # Импортируем классы для выравнивания и границ
+
 
 # Получаем текущий путь
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -55,7 +61,8 @@ def init_db():
                     status TEXT,
                     user_name TEXT,
                     privil BOOLEAN,
-                    last_msg INTEGER
+                    last_msg INTEGER,
+                    send_teacher BOOLEAN
                     
                 )
             ''')
@@ -304,8 +311,8 @@ def add_lunch_record(table_name, chat_id, will_eat, date, will_attend=None, reas
                             reply_markup=create_keyboard_back(),
                             parse_mode='HTML'
                         )
-                        cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (True, teacher[0]))
-                        cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg.message_id, teacher[0]))
+                        
+                        cursor.execute("UPDATE users SET send_teacher = ?, last_msg = ? WHERE chat_id = ?", (True, tmp_msg.message_id, teacher[0]))
                     
                     
 
@@ -810,10 +817,10 @@ def callback_handler(call):
             admin_bot.send_message(
                 ADMIN_CHAT_ID,
                 f"""Новый запрос на регистрацию
-Имя: {winfo[0]}
-Фамилия: {winfo[1]}
-Класс: {winfo[2]}
-Телефон: {winfo[3]}
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }""",
                 reply_markup=create_keyboard_accept_reject_block(call.message.chat.id)
@@ -890,10 +897,12 @@ def callback_handler(call):
         
         if call.data == "yes":
             add_lunch_record(
-                table_name,
-                call.message.chat.id,
-                True,
-                date = date
+                table_name = table_name,
+                chat_id = call.message.chat.id,
+                will_eat = True,
+                date = date,
+                will_attend=None,
+                reason = None
             )
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -928,11 +937,14 @@ def callback_handler(call):
 
         elif call.data == "no":
             add_lunch_record(
-                table_name,
-                call.message.chat.id,
-                False,
-                None
+                table_name = table_name,
+                chat_id = call.message.chat.id,
+                will_eat = False,
+                date = date,
+                will_attend=None,
+                reason = None
             )
+          
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -941,12 +953,15 @@ def callback_handler(call):
             )
 
         elif call.data == "yes_school":
+            
+
             add_lunch_record(
-                table_name,
-                call.message.chat.id,
-                False,
-                True,
-                date = date
+                table_name = table_name,
+                chat_id = call.message.chat.id,
+                will_eat = False,
+                date = date,
+                will_attend=True,
+                reason = None
             )
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -964,13 +979,17 @@ def callback_handler(call):
             )
 
         elif call.data == "ill":
+            
+
             add_lunch_record(
-                table_name,
-                call.message.chat.id,
-                False,
-                False,
-                "ill"
+                table_name = table_name,
+                chat_id = call.message.chat.id,
+                will_eat = False,
+                date = date,
+                will_attend = False,
+                reason = "ill"
             )
+
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -979,14 +998,17 @@ def callback_handler(call):
             )
 
         elif call.data == "doc":
+           
             add_lunch_record(
-                table_name,
-                call.message.chat.id,
-                False,
-                False,
-                "doc",
-                date=date
+                table_name = table_name,
+                chat_id = call.message.chat.id,
+                will_eat = False,
+                date = date,
+                will_attend = False,
+                reason = "doc"
             )
+            
+
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
@@ -1092,10 +1114,10 @@ def get_phone(message):
         message.chat.id,
         f"""Проверьте введенные даныные и нажмите кнопку 'Подтвердить', если все верно.
 Ваши данные:
-Имя: {winfo[0]}
-Фамилия: {winfo[1]}
-Класс: {winfo[2]}
-Телефон: {winfo[3]}
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }
         """,

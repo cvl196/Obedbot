@@ -3,6 +3,8 @@ import pytz
 from datetime import datetime, timedelta
 from main import create_connection, create_keyboard_main, create_keyboard1,db_check_status_pupil
 import sqlite3
+import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 TOKEN = '7631925603:AAGPVkbTAWWZREyoV9IJVa_WhAP5lgdbe64'
 ADMIN_TOKEN = '7769524090:AAGr7jwyDwibyL0zZdZJMmuVyLHk350FeP8'

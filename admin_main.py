@@ -1,10 +1,18 @@
 import telebot
+
+import os
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+
+
 from datetime import datetime, timedelta
 import pytz
 import sqlite3
 from sqlite3 import Error
 import os
 from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info   
+
+
+
 
 TOKEN = '7631925603:AAGPVkbTAWWZREyoV9IJVa_WhAP5lgdbe64'
 ADMIN_TOKEN = '7769524090:AAGr7jwyDwibyL0zZdZJMmuVyLHk350FeP8'
@@ -344,10 +352,10 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text=f"""Пользователь был заблокирован
-Имя: {winfo[0]}
-Фамилия: {winfo[1]}
-Класс: {winfo[2]}
-Телефон: {winfo[3]}
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }""")
         bot.send_message(
@@ -364,10 +372,10 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text=f"""Запрос от пользователя был отклонен
-Имя: {winfo[0]}
-Фамилия: {winfo[1]}
-Класс: {winfo[2]}
-Телефон: {winfo[3]}
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }"""
         )
@@ -387,10 +395,10 @@ def callback_handler(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text=f"""Пользователь был успешно добавлен как учитель ✅
-Имя: {winfo[0]}
-Фамилия: {winfo[1]}
-Класс: {winfo[2]}
-Телефон: {winfo[3]}
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}"""
         )
         bot.send_message(
