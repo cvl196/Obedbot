@@ -14,9 +14,9 @@ from main import create_connection,get_waitlist_info,create_keyboard_back,create
 
 
 
-TOKEN = '7631925603:AAGPVkbTAWWZREyoV9IJVa_WhAP5lgdbe64'
-ADMIN_TOKEN = '7769524090:AAGr7jwyDwibyL0zZdZJMmuVyLHk350FeP8'
-ADMIN_CHAT_ID = '791669507'
+TOKEN = os.environ.get('TOKEN')
+ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN')
+ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
 
 
 bot = telebot.TeleBot(TOKEN)

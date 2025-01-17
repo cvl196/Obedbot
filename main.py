@@ -2,7 +2,7 @@ import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'   
 
 
-
+from dotenv import load_dotenv
 import telebot
 from datetime import datetime, timedelta
 import pytz
@@ -20,9 +20,9 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(current_dir, 'lunch_database.db')
 
 # Токены
-TOKEN = '7631925603:AAGPVkbTAWWZREyoV9IJVa_WhAP5lgdbe64'
-ADMIN_TOKEN = '7769524090:AAGr7jwyDwibyL0zZdZJMmuVyLHk350FeP8'
-ADMIN_CHAT_ID = '791669507'
+TOKEN = os.getenv('TOKEN')
+ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
+ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 # Инициализация ботов
 bot = telebot.TeleBot(TOKEN)
 admin_bot = telebot.TeleBot(ADMIN_TOKEN)
@@ -692,9 +692,11 @@ def create_keyboard_accept_reject_block(chat_id):
     return keyboard
 
 def create_keyboard_reg_check():
+
     keyboard = telebot.types.InlineKeyboardMarkup()
-    keyboard.add(telebot.types.InlineKeyboardButton("Изменить", callback_data="edit"))
     keyboard.add(telebot.types.InlineKeyboardButton("Подтвердить", callback_data="accept"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Изменить", callback_data="edit"))
+    
     return keyboard
 
 def create_keyboard_main_teacher():
