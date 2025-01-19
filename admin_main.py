@@ -3,7 +3,7 @@ import telebot
 import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
-
+from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import pytz
 import sqlite3
@@ -14,9 +14,10 @@ from main import create_connection,get_waitlist_info,create_keyboard_back,create
 
 
 
-TOKEN = os.environ.get('TOKEN')
-ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN')
-ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
+load_dotenv()
+TOKEN = os.getenv('TOKEN')
+ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
+ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
 
 bot = telebot.TeleBot(TOKEN)
@@ -306,10 +307,10 @@ def callback_handler(call):
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=f"""Пользователь был успешно добавлен ✅
-Имя: {winfo[0]}
-Фамилия: {winfo[1]}
-Класс: {winfo[2]}
-Телефон: {winfo[3]}
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }"""
             )

@@ -1,7 +1,7 @@
 import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'   
 
-
+import json
 from dotenv import load_dotenv
 import telebot
 from datetime import datetime, timedelta
@@ -20,6 +20,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(current_dir, 'lunch_database.db')
 
 # Токены
+load_dotenv()
 TOKEN = os.getenv('TOKEN')
 ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
@@ -235,7 +236,7 @@ def create_table(date):
             conn.close()
     return None
 
-def add_lunch_record(table_name, chat_id, will_eat, date, will_attend=None, reason=None):
+def add_lunch_record(table_name, chat_id, will_eat, date, send = 0, will_attend=None, reason=None):
     if isinstance(will_eat, str):
         will_eat = will_eat.lower() == "да"
     if isinstance(will_attend, str) and will_attend is not None:
@@ -250,7 +251,7 @@ def add_lunch_record(table_name, chat_id, will_eat, date, will_attend=None, reas
     cursor.execute("SELECT first_name, last_name, grade FROM users WHERE chat_id = ?", (chat_id,))
     name_record = cursor.fetchone()
     name = f"{name_record[0]} {name_record[1]}" 
-    clas = name_record [2]
+    
     
     cursor.close()
 
@@ -289,41 +290,51 @@ def add_lunch_record(table_name, chat_id, will_eat, date, will_attend=None, reas
                     VALUES (?, ?, ?, ?, ?)
                 ''', (chat_id, name, will_eat, will_attend if will_attend is not None else False, reason))
             
-            cursor.execute(f"SELECT chat_id FROM {table_name}")
-            voted_people = len(cursor.fetchall())
-            cursor.execute(f"SELECT people FROM classes WHERE class = ?", (clas,))
-            people = cursor.fetchone()[0]
-            
-            if people == voted_people: 
-                cursor.execute (f"SELECT chat_id, send_teacher FROM users WHERE grade = ? and status = ?", (clas,"teacher") )
-                teachers = cursor.fetchall()
-                for teacher in teachers:
-                    if teacher[1]!=1: 
-                        lunch_info = db_get_lunch_info_teacher(table_name=table_name, clas=clas)
-                        cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?",(teacher[0],))
-                        last_msg = cursor.fetchone()[0]
-                        if last_msg: 
-                            bot.delete_message(chat_id = teacher[0], 
-                                                message_id = last_msg)
-                        tmp_msg = bot.send_message(
-                            chat_id=teacher[0],                        
-                            text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
-                            reply_markup=create_keyboard_back(),
-                            parse_mode='HTML'
-                        )
-                        
-                        cursor.execute("UPDATE users SET send_teacher = ?, last_msg = ? WHERE chat_id = ?", (True, tmp_msg.message_id, teacher[0]))
+           
                     
                     
 
 
 
             conn.commit()
+            if send: notify_teacher(table_name=table_name,date=date, chat_id = chat_id, conn = conn, cursor = cursor )
+
         except Error as e:
             print(f"Ошибка при добавлении записи: {e}")
         finally:
             conn.close()
-            
+
+def notify_teacher(table_name, date, chat_id, conn, cursor):
+    
+    cursor.execute("SELECT first_name, last_name, grade FROM users WHERE chat_id = ?", (chat_id,))
+    name_record = cursor.fetchone()
+    clas = name_record [2]
+    cursor.execute(f"SELECT chat_id FROM {table_name}")
+    voted_people = len(cursor.fetchall())
+    cursor.execute(f"SELECT people FROM classes WHERE class = ?", (clas,))
+    people = cursor.fetchone()[0]
+    
+    if people == voted_people: 
+        cursor.execute (f"SELECT chat_id, send_teacher FROM users WHERE grade = ? and status = ?", (clas,"teacher") )
+        teachers = cursor.fetchall()
+        for teacher in teachers:
+            if teacher[1]!=1: 
+                lunch_info = db_get_lunch_info_teacher(table_name=table_name, clas=clas)
+                cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?",(teacher[0],))
+                last_msg = cursor.fetchone()[0]
+                if last_msg: 
+                    bot.delete_message(chat_id = teacher[0], 
+                                        message_id = last_msg)
+                tmp_msg = bot.send_message(
+                    chat_id=teacher[0],                        
+                    text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
+                    reply_markup=create_keyboard_back(),
+                    parse_mode='HTML'
+                )
+                
+                cursor.execute("UPDATE users SET send_teacher = ?, last_msg = ? WHERE chat_id = ?", (True, tmp_msg.message_id, teacher[0]))
+    conn.commit()
+
 
 def get_lunch_info(chat_id, today=False):
     
@@ -504,7 +515,7 @@ def generate_attendance_report(start_date_str, end_date_str, grade):
     records = []
 
     # Получаем список пользователей
-    cursor.execute("SELECT first_name, last_name, chat_id FROM users WHERE grade = ?", (grade,))
+    cursor.execute("SELECT first_name, last_name, chat_id FROM users WHERE grade = ? AND status = ?", (grade,'pupil'))
     
     users_id = []
     users = [{'name': f"{row[1]} {row[0]}", 'chat_id': row[2]} for row in cursor.fetchall()]  # Объединяем фамилию и имя
@@ -617,6 +628,61 @@ def add_last_msg(chat_id, last_msg):
         finally:
             conn.close()
 
+def get_exel_users(clas = None): 
+    conn = create_connection()
+    cursor = conn.cursor()
+    if clas: 
+        cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ?  AND grade = ? ORDER BY grade ASC ", ('pupil',clas))
+    elif clas == None:
+        cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ? ORDER BY grade ASC ", ('pupil',))
+
+    people = cursor.fetchall()
+        
+    people_df = pd.DataFrame(data = people,
+                            
+                            columns = ['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк' ] 
+                             )
+    
+    output_file = 'people.xlsx'
+    people_df.to_excel(output_file, index= False, sheet_name='people')
+
+    cursor.close()
+    conn.close()
+    
+    #Формат
+    workbook = load_workbook(output_file)
+    sheet = workbook.active
+
+    thin_border = Border(left=Side(style='thin'), 
+                         right=Side(style='thin'), 
+                         top=Side(style='thin'), 
+                         bottom=Side(style='thin'))  # Определяем стиль границы
+
+    for i, column in enumerate(sheet.columns):
+        max_length = 0
+        column = [cell for cell in column]
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+                cell.alignment = Alignment(horizontal='center')  # Выравнивание по центру
+                cell.border = thin_border  # Применяем границы к ячейке
+            except:
+                pass
+        
+        # Устанавливаем отступы для первого столбца и остальных
+        
+        adjusted_width = (max_length + 4)  # Отступ +4 для первого столбца
+        
+            
+        
+        sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
+
+    workbook.save(output_file)
+
+
+
+
 def create_keyboard1():
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.add(
@@ -702,6 +768,8 @@ def create_keyboard_reg_check():
 def create_keyboard_main_teacher():
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на завтра", callback_data="get_lunch_info_teacher"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на сегодня", callback_data="get_lunch_info_teacher_today"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей ", callback_data="get_users_exel"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
     return keyboard
 
@@ -781,9 +849,11 @@ def start(message):
 def callback_handler(call):
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
-    date = tomorrow.strftime("%d.%m")
-    year = tomorrow.strftime("%Y")
-    table_name = f"lunch_{date.replace('.', '_')}_{year}"
+    today = datetime.now(tz)
+    date_today = today.strftime("%d_%m_%Y")
+    date = tomorrow.strftime("%d_%m_%Y")    
+    table_name = f"lunch_{date}"
+    table_name_today = f"lunch_{date_today}"
 
     if not db_check_id(call.message.chat.id) :
         if call.data == "reg":
@@ -879,14 +949,44 @@ def callback_handler(call):
                 text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
                 reply_markup=create_keyboard_main_teacher()
             )
+        
+        elif call.data == "get_lunch_info_teacher_today":
+            chat_id = call.message.chat.id
+            
+            conn = create_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT grade FROM users WHERE chat_id = ?", (chat_id,))
+            result = cursor.fetchone()  # Сохраняем результат в переменной
+            clas = result[0] if result else None  # Проверяем, есть ли результат
+            cursor.close()
+            conn.close()
+
+            lunch_info = db_get_lunch_info_teacher(table_name=table_name_today, clas=clas)
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
+                reply_markup=create_keyboard_back(),
+                parse_mode='HTML'
+            )
+
         elif call.data == "get_report":
             bot.edit_message_text(chat_id = call.message.chat.id,
                                 message_id = call.message.id,
                                 text = "Выберите класс для отчета",
-                                reply_markup = create_keyboard_classes_report())
-            
+                                reply_markup = create_keyboard_classes_report())      
         
-
+        elif call.data == "get_users_exel": 
+            get_exel_users()
+            with open('people.xlsx', 'rb') as file:
+                bot.send_document(
+                chat_id=call.message.chat.id,
+                document=file
+                )
+            bot.send_message(chat_id=call.message.chat.id,
+                     text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
+                     reply_markup=create_keyboard_main_teacher())
 
         elif call.data.startswith('class_report$'):
             grade = call.data.split('$')[1]
@@ -903,6 +1003,7 @@ def callback_handler(call):
                 chat_id = call.message.chat.id,
                 will_eat = True,
                 date = date,
+                send = 1,
                 will_attend=None,
                 reason = None
             )
@@ -962,6 +1063,7 @@ def callback_handler(call):
                 chat_id = call.message.chat.id,
                 will_eat = False,
                 date = date,
+                send = 1,
                 will_attend=True,
                 reason = None
             )
@@ -988,6 +1090,7 @@ def callback_handler(call):
                 chat_id = call.message.chat.id,
                 will_eat = False,
                 date = date,
+                send = 1,
                 will_attend = False,
                 reason = "ill"
             )
@@ -1006,6 +1109,7 @@ def callback_handler(call):
                 chat_id = call.message.chat.id,
                 will_eat = False,
                 date = date,
+                send = 1,
                 will_attend = False,
                 reason = "doc"
             )
@@ -1101,20 +1205,19 @@ def get_priv(message):
     bot.register_next_step_handler(message, get_phone)
 
 def get_phone(message):
-    
-    phone = message.contact.phone_number
-    
-    
-    
-    add_user_waitlist(phone, 'phone', message.chat.id) 
-    
-    remove_keyboard = telebot.types.ReplyKeyboardRemove()
-    temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
-    winfo = get_waitlist_info(message.chat.id)    
-    print(winfo)
-    bot.send_message(
-        message.chat.id,
-        f"""Проверьте введенные даныные и нажмите кнопку 'Подтвердить', если все верно.
+    if message.contact:       
+
+        phone = message.contact.phone_number
+
+        add_user_waitlist(phone, 'phone', message.chat.id) 
+
+        remove_keyboard = telebot.types.ReplyKeyboardRemove()
+        temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
+        winfo = get_waitlist_info(message.chat.id)    
+        print(winfo)
+        bot.send_message(
+            message.chat.id,
+            f"""Проверьте введенные даныные и нажмите кнопку 'Подтвердить', если все верно.
 Ваши данные:
 Имя: {winfo[1]}
 Фамилия: {winfo[2]}
@@ -1122,9 +1225,16 @@ def get_phone(message):
 Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }
-        """,
-        reply_markup=create_keyboard_reg_check()
+            """, 
+            reply_markup=create_keyboard_reg_check()
+        )
+    else: 
+        bot.send_message(
+        message.chat.id, 
+        'Неверно отправлен контакт! \nНажмите кнопку ниже чтобы указать свой номер телефона', 
+        reply_markup=create_keyboard_phone()
     )
+        bot.register_next_step_handler(message, get_phone)
 
 
 ###создаие отчета

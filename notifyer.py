@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import telebot
 import pytz
 from datetime import datetime, timedelta
@@ -6,9 +7,10 @@ import sqlite3
 import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
-TOKEN = os.environ.get('TOKEN')
-ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN')
-ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
+load_dotenv()
+TOKEN = os.getenv('TOKEN')
+ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
+ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
 bot = telebot.TeleBot(TOKEN)
 admin_bot = telebot.TeleBot(ADMIN_TOKEN)
