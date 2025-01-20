@@ -3,7 +3,7 @@ from sqlite3 import Error
 from datetime import datetime
 import pandas as pd
 import os
-from main import get_exel_users
+
 
 def create_connection():
     """
@@ -518,4 +518,4 @@ def oneuse():
     cursor.close()
     conn.close()
 
-get_exel_users()
+clean_table('users')

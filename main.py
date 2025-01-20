@@ -734,7 +734,7 @@ def create_keyboard_priv():
 
 def create_keyboard_reg1():
     keyboard = telebot.types.InlineKeyboardMarkup()
-    keyboard.add(telebot.types.InlineKeyboardButton("Зарегестрироваться", callback_data="reg"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Зарегистрироваться", callback_data="reg"))
     return keyboard
 
 def create_keyboard_accept_reject_block(chat_id):
@@ -757,19 +757,21 @@ def create_keyboard_accept_reject_block(chat_id):
 
     return keyboard
 
-def create_keyboard_reg_check():
+def create_keyboard_reg_check(back = False):
 
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.add(telebot.types.InlineKeyboardButton("Подтвердить", callback_data="accept"))
     keyboard.add(telebot.types.InlineKeyboardButton("Изменить", callback_data="edit"))
-    
+    if back:
+        keyboard.add(telebot.types.InlineKeyboardButton("Отменить", callback_data="back"))
     return keyboard
 
 def create_keyboard_main_teacher():
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на завтра", callback_data="get_lunch_info_teacher"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на сегодня", callback_data="get_lunch_info_teacher_today"))
-    keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей ", callback_data="get_users_exel"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей", callback_data="get_users_exel"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Изменить данные", callback_data="edit"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
     return keyboard
 
@@ -800,6 +802,21 @@ def create_keyboard_classes_reg():
     print (classes)
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_reg${cl[0]}"))
+    
+    return keyboard
+
+def create_keyboard_classes_edit(): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""SELECT class FROM classes""")
+    classes = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    print (classes)
+    for cl in classes: 
+        keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_edit${cl[0]}"))
     
     return keyboard
 
@@ -869,6 +886,8 @@ def callback_handler(call):
                     text=f"Введите ваше имя")               
           
                 bot.register_next_step_handler(call.message, get_name)  
+
+    
 
         elif call.data == "edit":
             bot.edit_message_text(
@@ -941,7 +960,66 @@ def callback_handler(call):
                 reply_markup=create_keyboard_back(),
                 parse_mode='HTML'
             )
+        elif call.data == "accept":
+            winfo = get_waitlist_info(call.message.chat.id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"Ожидайте, подтверждение. Как только администратор подтвердит ваш запрос, ваши данные изменятся.",
+                reply_markup = create_keyboard_back()
 
+
+            )
+            admin_bot.send_message(
+                ADMIN_CHAT_ID,
+                f"""Новый запрос на изменение данных
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }""",
+                reply_markup=create_keyboard_accept_reject_block(call.message.chat.id)
+            )
+
+
+        elif call.data.startswith('class_reg$'): 
+            grade = call.data.split('$')[1]
+            bot.edit_message_text(chat_id = call.message.chat.id,
+                                  message_id = call.message.id, 
+                                  text = f'Вы указали класс {grade}')    
+            
+            add_user_waitlist(grade, 'grade', call.message.chat.id)
+            bot.send_message(
+                chat_id=call.message.chat.id,
+                text='Вы являетесь льготником?',
+                reply_markup=create_keyboard_priv()
+            )
+            bot.register_next_step_handler(call.message, get_priv)
+
+        elif call.data == "edit":
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"Введите ваше имя",
+                
+            )
+            bot.register_next_step_handler(call.message, get_name)
+
+        elif call.data.startswith('class_edit$'):
+            grade = call.data.split('$')[1]
+            bot.edit_message_text(chat_id = call.message.chat.id,
+                                  message_id = call.message.id, 
+                                  text = f'Вы указали класс {grade}')    
+            
+            add_user_waitlist(grade, 'grade', call.message.chat.id)
+            bot.send_message(
+                chat_id=call.message.chat.id,
+                text='Вы являетесь льготником?',
+                reply_markup=create_keyboard_priv()
+            )
+            bot.register_next_step_handler(call.message, get_priv_edit)
+        
         elif call.data == "back":
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -977,16 +1055,36 @@ def callback_handler(call):
                                 text = "Выберите класс для отчета",
                                 reply_markup = create_keyboard_classes_report())      
         
-        elif call.data == "get_users_exel": 
-            get_exel_users()
+        elif call.data == "get_users_exel":             
+             # Удаляем предыдущее сообщение
+            chat_id = call.message.chat.id
+            conn = create_connection()
+            cursor = conn.cursor()
+            cursor.execute('SELECT grade FROM users WHERE chat_id = ?', (chat_id,))
+            clas = cursor.fetchone()[0]
+            cursor.close()     
+            conn.close()
+            get_exel_users(clas=clas)
             with open('people.xlsx', 'rb') as file:
                 bot.send_document(
                 chat_id=call.message.chat.id,
                 document=file
                 )
-            bot.send_message(chat_id=call.message.chat.id,
+
+            last_msg = get_user_info(call.message.chat.id)    
+            if last_msg[9]:  # Предполагаем, что last_msg находится в 6-й колонке
+                try: 
+                    bot.delete_message(chat_id=call.message.chat.id, message_id=last_msg[9]) 
+                except: 
+                    pass
+            
+            msg = bot.send_message(chat_id=call.message.chat.id,
                      text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
                      reply_markup=create_keyboard_main_teacher())
+            
+            
+            add_last_msg(chat_id = call.message.chat.id, last_msg = msg.message_id)
+            
 
         elif call.data.startswith('class_report$'):
             grade = call.data.split('$')[1]
@@ -1181,8 +1279,7 @@ def get_last_name(message):
         message.chat.id, 
         'Выберите ваш класс ниже', 
         reply_markup = create_keyboard_classes_reg()
-    )
-    
+    )   
 
 def get_priv(message):
     priv = 0
@@ -1226,7 +1323,7 @@ def get_phone(message):
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }
             """, 
-            reply_markup=create_keyboard_reg_check()
+            reply_markup=create_keyboard_reg_check(db_check_id(message.chat.id))
         )
     else: 
         bot.send_message(
@@ -1250,7 +1347,7 @@ def get_report(message, grade):
                      text=f"Добрый день, {message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
                      reply_markup=create_keyboard_main_teacher())
     
-
+###изменение данных 
 
 
 

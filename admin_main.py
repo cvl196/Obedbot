@@ -9,7 +9,7 @@ import pytz
 import sqlite3
 from sqlite3 import Error
 import os
-from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info   
+from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info,get_exel_users   
 
 
 
@@ -31,7 +31,13 @@ def user_accept(chat_id, role):
     cursor = conn.cursor()
 
     try:
-        # Получаем данные пользователя из users_waitlist
+        cursor.execute("""
+            DELETE 
+            FROM users 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        conn.commit()
+
         cursor.execute("""
             SELECT first_name, last_name, grade, phone, chat_id, user_name, status, privil 
             FROM users_waitlist 
@@ -86,7 +92,13 @@ def user_delete(chat_id):
     cursor = conn.cursor()
 
     try:
-        # Получаем информацию о пользователе для определения класса
+        cursor.execute("""
+            DELETE 
+            FROM users 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        conn.commit()
+
         cursor.execute("SELECT grade FROM users WHERE chat_id = ?", (chat_id,))
         user_data = cursor.fetchone()
 
@@ -115,7 +127,7 @@ def user_delete(chat_id):
 
 def user_reject(chat_id):
     conn = create_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor()    
     cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
     conn.commit()
     conn.close()
@@ -125,7 +137,13 @@ def block_user(chat_id):
     cursor = conn.cursor()
 
     try:
-        # Проверяем существование пользователя в waitlist
+        cursor.execute("""
+            DELETE 
+            FROM users 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        conn.commit()
+
         cursor.execute("SELECT chat_id, user_name, phone FROM users_waitlist WHERE chat_id = ?", (chat_id,))
         user_data = cursor.fetchone()
 
@@ -280,6 +298,15 @@ def show_classes (message):
     admin_bot.send_message(chat_id=ADMIN_CHAT_ID, 
                            text='Выберите класс:',
                            reply_markup=create_keyboard_classes())
+    
+@admin_bot.message_handler(commands=['users_exel'])
+def send_users (message):
+    get_exel_users()
+    with open('people.xlsx', 'rb') as file:
+                admin_bot.send_document(
+                chat_id=message.chat.id,
+                document=file
+                )
 
 
 @admin_bot.message_handler(commands=['create_class'])
@@ -387,21 +414,22 @@ def callback_handler(call):
         )
     
     elif call.data.startswith('accept_teacher$'):
-        winfo = get_waitlist_info(call.message.chat.id)
         chat_id = call.data.split('$')[1]
-
         user_accept(chat_id,'teacher')
+
+        winfo = get_user_info(call.message.chat.id)
 
         admin_bot.edit_message_text(
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text=f"""Пользователь был успешно добавлен как учитель ✅
-Имя: {winfo[1]}
-Фамилия: {winfo[2]}
-Класс: {winfo[3]}
-Телефон: {winfo[4]}
-Имя пользователя: {winfo[6]}"""
+Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}"""
         )
+        
         bot.send_message(
             chat_id=chat_id,
             text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
