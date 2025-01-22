@@ -162,9 +162,11 @@ def db_get_lunch_info_teacher(table_name, clas):
                 formatted_results.append(f"{name} - {status}")
             
 
-            cursor.execute("SELECT people FROM classes WHERE class = ?", (clas,))
-            people_in_class = cursor.fetchone()[0] 
-
+            cursor.execute("SELECT chat_id FROM users WHERE grade = ? AND status = ?", (clas,'pupil'))
+            people_in_class = len(cursor.fetchall())
+            print('_____')
+            print(cursor.fetchall())
+            print('______')
 
             cursor.execute(f"SELECT users.chat_id, users.privil, {table_name}.will_eat FROM users INNER JOIN {table_name} ON users.chat_id = {table_name}.chat_id WHERE grade = ?", (clas,))
             people = cursor.fetchall() 
@@ -174,6 +176,7 @@ def db_get_lunch_info_teacher(table_name, clas):
             eat_no = 0
             eat_yes = 0
             eat_priv = 0
+            
             for person in people: 
                 if person[2] == 1: 
                     if person[1] == 1: 
@@ -720,6 +723,12 @@ def create_keyboard_main():
     keyboard.add(telebot.types.InlineKeyboardButton("Мой профиль", callback_data="profile_user"))
     return keyboard
 
+def create_keyboard_profile():
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton("Изменить данные", callback_data="edit"))
+    keyboard.add(telebot.types.InlineKeyboardButton("В главное меню", callback_data="back"))
+    return keyboard
+
 def create_keyboard_phone():
     keyboard = telebot.types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
     button_phone = telebot.types.KeyboardButton(text="Отправить контакт", request_contact=True)
@@ -771,8 +780,8 @@ def create_keyboard_main_teacher():
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на завтра", callback_data="get_lunch_info_teacher"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на сегодня", callback_data="get_lunch_info_teacher_today"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей", callback_data="get_users_exel"))
-    keyboard.add(telebot.types.InlineKeyboardButton("Изменить данные", callback_data="edit"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Мой профиль", callback_data="profile_user"))
     return keyboard
 
 def create_keyboard_classes_report(): 
@@ -900,11 +909,19 @@ def callback_handler(call):
         
         elif call.data == "accept":
             winfo = get_waitlist_info(call.message.chat.id)
-            bot.edit_message_text(
+            tmp_msg = bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=f"Ожидайте, подтверждение. Как только администратор подтвердит ваш запрос, вы получите доступ к боту."
             )
+            conn = create_connection()
+            cursor = conn.cursor()
+            tmp_msg = tmp_msg.message_id
+            
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, call.message.chat.id))
+            conn.commit()
+            conn.close()
+
             admin_bot.send_message(
                 ADMIN_CHAT_ID,
                 f"""Новый запрос на регистрацию
@@ -940,6 +957,7 @@ def callback_handler(call):
             )
             
     elif db_check_status_teacher(call.message.chat.id) and db_check_id(call.message.chat.id):
+        
         if call.data == "get_lunch_info_teacher":
             chat_id = call.message.chat.id
             
@@ -960,9 +978,10 @@ def callback_handler(call):
                 reply_markup=create_keyboard_back(),
                 parse_mode='HTML'
             )
+        
         elif call.data == "accept":
             winfo = get_waitlist_info(call.message.chat.id)
-            bot.edit_message_text(
+            tmp_msg =  bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=f"Ожидайте, подтверждение. Как только администратор подтвердит ваш запрос, ваши данные изменятся.",
@@ -981,7 +1000,13 @@ def callback_handler(call):
 Льготник: {'Да' if winfo[7] else 'Нет' }""",
                 reply_markup=create_keyboard_accept_reject_block(call.message.chat.id)
             )
-
+            conn = create_connection()
+            cursor = conn.cursor()
+            tmp_msg = tmp_msg.message_id
+            
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, call.message.chat.id))
+            conn.commit()
+            conn.close()
 
         elif call.data.startswith('class_reg$'): 
             grade = call.data.split('$')[1]
@@ -1084,15 +1109,33 @@ def callback_handler(call):
             
             
             add_last_msg(chat_id = call.message.chat.id, last_msg = msg.message_id)
-            
-
+          
         elif call.data.startswith('class_report$'):
             grade = call.data.split('$')[1]
             bot.edit_message_text(chat_id=call.message.chat.id,
                                   message_id = call.message.id,
                              text=f"Введите промежуток времени для отчета {grade} через тире например (09.01.2025-09.04.2025)")
             bot.register_next_step_handler(call.message, get_report, grade)
-             
+           
+        elif call.data == "profile_user": 
+            chat_id = call.message.chat.id
+            winfo = get_user_info(chat_id)
+            if winfo[6] == 'teacher':
+                status = 'Учитель'
+            else:
+                status = 'Ученик'
+            
+            bot.edit_message_text (chat_id=chat_id, 
+                                        message_id=call.message.message_id,
+                                   text=f"""Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Статус: {status}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}
+Льготник: {'Да' if winfo[8] else 'Нет' }""",
+                                        reply_markup = create_keyboard_profile())
+    
     elif db_check_id(call.message.chat.id) and db_check_status_pupil(call.message.chat.id):
         
         if call.data == "yes":
@@ -1135,6 +1178,58 @@ def callback_handler(call):
                 text=get_lunch_info(call.message.chat.id, today=True),
                 reply_markup=create_keyboard_back()
             )
+
+        elif call.data.startswith('class_reg$'): 
+            grade = call.data.split('$')[1]
+            bot.edit_message_text(chat_id = call.message.chat.id,
+                                  message_id = call.message.id, 
+                                  text = f'Вы указали класс {grade}')    
+            
+            add_user_waitlist(grade, 'grade', call.message.chat.id)
+            bot.send_message(
+                chat_id=call.message.chat.id,
+                text='Вы являетесь льготником?',
+                reply_markup=create_keyboard_priv()
+            )
+            bot.register_next_step_handler(call.message, get_priv)
+
+        elif call.data == "edit":
+          bot.edit_message_text(
+              chat_id=call.message.chat.id,
+              message_id=call.message.message_id,
+              text=f"Введите ваше имя",
+              
+          )
+          bot.register_next_step_handler(call.message, get_name)
+
+        elif call.data == "accept":
+            winfo = get_waitlist_info(call.message.chat.id)
+            tmp_msg = bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"Ожидайте, подтверждение. Как только администратор подтвердит ваш запрос, ваши данные изменятся.",
+                reply_markup = create_keyboard_back()
+
+
+            )
+            admin_bot.send_message(
+                ADMIN_CHAT_ID,
+                f"""Новый запрос на изменение данных
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }""",
+                reply_markup=create_keyboard_accept_reject_block(call.message.chat.id)
+            )
+            conn = create_connection()
+            cursor = conn.cursor()
+            tmp_msg = tmp_msg.message_id
+            
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, call.message.chat.id))
+            conn.commit()
+            conn.close()
 
         elif call.data == "no":
             add_lunch_record(
@@ -1245,7 +1340,7 @@ def callback_handler(call):
 Телефон: {winfo[5]}
 Имя пользователя: {winfo[7]}
 Льготник: {'Да' if winfo[8] else 'Нет' }""",
-                                        reply_markup = create_keyboard_back())
+                                        reply_markup = create_keyboard_profile())
         
 
     bot.answer_callback_query(call.id)

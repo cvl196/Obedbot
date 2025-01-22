@@ -9,7 +9,7 @@ import pytz
 import sqlite3
 from sqlite3 import Error
 import os
-from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info,get_exel_users   
+from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info,get_exel_users, db_check_id   
 
 
 
@@ -30,13 +30,7 @@ def user_accept(chat_id, role):
     conn = create_connection()
     cursor = conn.cursor()
 
-    try:
-        cursor.execute("""
-            DELETE 
-            FROM users 
-            WHERE chat_id = ?
-        """, (chat_id,))
-        conn.commit()
+    try:        
 
         cursor.execute("""
             SELECT first_name, last_name, grade, phone, chat_id, user_name, status, privil 
@@ -49,24 +43,34 @@ def user_accept(chat_id, role):
             print(f"Пользователь с chat_id {chat_id} не найден в списке ожидания.")
             return False
 
-        # Проверяем наличие класса
-        cursor.execute("SELECT class FROM classes WHERE class = ?", (user_data[2],))
-        class_exists = cursor.fetchone()
+        
 
-        if class_exists is None:
-            print(f"Класс {user_data[2]} не найден.")
-            return False
+    
 
         if user_data[5] is None:
             user_name = 'Нет имени пользователя'
         else:
             user_name = user_data[5]
-        cursor.execute("""
-            INSERT INTO users (first_name, last_name, grade, phone, chat_id, user_name, status, privil)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_data[0], user_data[1], user_data[2], user_data[3], user_data[4], user_name, role, user_data[7]))
+        if db_check_id(chat_id=chat_id):
+            cursor.execute("""
+                UPDATE users 
+                SET first_name = ?,
+                    last_name = ?,
+                    grade = ?,
+                    phone = ?,
+                    user_name = ?,
+                    status = ?,
+                    privil = ?
+                WHERE chat_id = ?
+            """, (user_data[0], user_data[1], user_data[2], user_data[3], user_name, role, user_data[7], user_data[4]))
+        
+        else:
+            cursor.execute("""
+                INSERT INTO users (first_name, last_name, grade, phone, chat_id, user_name, status, privil)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (user_data[0], user_data[1], user_data[2], user_data[3], user_data[4], user_name, role, user_data[7]))
 
-        # Удаляем пользователя из списка ожидания
+       
         cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
         if role == 'pupil':
             cursor.execute("UPDATE classes SET people = people + 1 WHERE class = ?", (user_data[2],))
@@ -330,32 +334,60 @@ def callback_handler(call):
             return
         
         if user_accept(chat_id, 'pupil'):
-            admin_bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text=f"""Пользователь был успешно добавлен ✅
+
+            if db_check_id(chat_id=chat_id):
+                admin_bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"""Данные пользоваетля были успешно обновленны ✅
+Новые данные: 
+Статус: ученик
 Имя: {winfo[1]}
 Фамилия: {winfo[2]}
 Класс: {winfo[3]}
 Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }"""
-            )
+                )
+            
+            else:
+                admin_bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"""Пользователь был успешно добавлен ✅
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }"""
+                )
+            
             conn = create_connection()
             cursor = conn.cursor()
+            print(chat_id)
+            
             cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
             last_msg = cursor.fetchone()
-            if not last_msg: 
+            
+            if last_msg and last_msg[0]: 
+                print(last_msg)
                 bot.delete_message(chat_id=chat_id, 
-                                   message_id = last_msg)
+                                   message_id = last_msg[0])
 
 
-
-            tmp_msg = bot.send_message(
-                chat_id=chat_id,
-                text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
-                reply_markup=create_keyboard_back()
-            )
+            if db_check_id(chat_id=chat_id):
+                tmp_msg = bot.send_message(
+                    chat_id=chat_id,
+                    text="Ваш запрос на изменение данных принят. Данные успешно изменены!",
+                    reply_markup=create_keyboard_back()
+                )
+            else: 
+                tmp_msg = bot.send_message(
+                    chat_id=chat_id,
+                    text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
+                    reply_markup=create_keyboard_back()
+                )
             tmp_msg = tmp_msg.message_id
             
             cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
@@ -418,23 +450,56 @@ def callback_handler(call):
         user_accept(chat_id,'teacher')
 
         winfo = get_user_info(call.message.chat.id)
-
-        admin_bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=f"""Пользователь был успешно добавлен как учитель ✅
+        if db_check_id(chat_id=chat_id):
+             admin_bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"""Данные пользователя успешно обновленны!
+Новые данные:
+Статус: учитель
 Имя: {winfo[2]}
 Фамилия: {winfo[3]}
 Класс: {winfo[4]}
 Телефон: {winfo[5]}
 Имя пользователя: {winfo[7]}"""
-        )
-        
-        bot.send_message(
-            chat_id=chat_id,
-            text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
-            reply_markup=create_keyboard_back()
-        )
+            )
+        else:             
+            admin_bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"""Пользователь был успешно добавлен как учитель ✅
+Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}"""
+            )
+        conn = create_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
+        last_msg = cursor.fetchone()
+        if last_msg and last_msg[0]: 
+              print(last_msg)
+              bot.delete_message(chat_id=chat_id, 
+                                 message_id = last_msg[0])
+            
+        if db_check_id(chat_id=chat_id): 
+            tmp_msg = bot.send_message(
+                chat_id=chat_id,
+                text="Ваш запрос на изменнение данных принят.",
+                reply_markup=create_keyboard_back()
+            )
+        else:
+            tmp_msg = bot.send_message(
+                chat_id=chat_id,
+                text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
+                reply_markup=create_keyboard_back()
+            )
+        tmp_msg = tmp_msg.message_id
+            
+        cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
+        conn.commit()
+        conn.close()
 
     elif call.data.startswith('delete$'):
         chat_id = call.data.split('$')[1]

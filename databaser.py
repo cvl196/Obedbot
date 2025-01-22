@@ -518,4 +518,4 @@ def oneuse():
     cursor.close()
     conn.close()
 
-clean_table('users')
+clean_table('lunch_23_01_2025')
