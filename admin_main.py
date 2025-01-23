@@ -10,7 +10,7 @@ import sqlite3
 from sqlite3 import Error
 import os
 from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info,get_exel_users, db_check_id   
-
+import pandas as pd
 
 
 
@@ -185,6 +185,54 @@ def unblocking_user(message):
     unblock_user(info)
     admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"Пользователь {info} разблокирован")
 
+def users_accept(file):
+    # Подключение к базе данных
+    conn = create_connection()
+    cursor = conn.cursor()
+    varn = 0
+    # Чтение данных из Excel файла
+    df = pd.read_excel(file)
+    users = df.values.tolist()
+    counter = 0
+    # Проход по каждому пользователю из загруженного файла
+    for user in users:
+        added_people = []
+        if len(user) != 6:
+            varn = 1
+            continue  # Пропускаем пользователей с некорректным количеством данных
+
+        first_name = user[0]
+        last_name = user[1]
+        grade = user[2]
+        phone = user[3]
+        username = user[4]
+        privil = 1 if user[5] == '+' else 0  # Привилегии
+
+        # Проверяем, существует ли пользователь с таким username
+        cursor.execute("SELECT COUNT(*) FROM users WHERE user_name = ?", (username,))
+        exists = cursor.fetchone()[0]
+
+        if exists == 0:  # Если пользователя нет, добавляем его
+            cursor.execute(
+                        "INSERT INTO users (first_name, last_name, grade, phone, status, user_name, privil) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (first_name, last_name, grade, phone, 'pupil', username, privil))
+
+
+            added_people.append(f"{first_name} {last_name}")
+            counter += 1       
+       
+    
+    conn.commit()
+    conn.close()
+    text = ''
+    if varn: 
+        text += 'Один или несколько пользователей не добавленны\n'
+    text += f'Человек добавлено: {counter}\n'
+    text += f'Успешно добавленны:\n'
+    for person in added_people: 
+        text += f'{person}\n'
+    return text
+            
 
 def create_keyboard_users(users):
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
@@ -303,14 +351,34 @@ def show_classes (message):
                            text='Выберите класс:',
                            reply_markup=create_keyboard_classes())
     
+@admin_bot.message_handler(commands=['add_users'])
+def add_users (message):
+
+    current_directory = os.getcwd()
+    file_name =  os.path.join(current_directory, 'xlsx', 'pattern.xlsx')
+
+    with open (file_name,'rb') as file: 
+        admin_bot.send_document(chat_id=ADMIN_CHAT_ID,
+                                document= file)
+
+    admin_bot.send_message(chat_id=ADMIN_CHAT_ID, 
+                           text=f"""Чтобы добавить несколько людей сразу заполните их данные в этот файл и отправьте его боту
+В поле телефон укажите телефон в формате 79999999999
+В поле льготник укажите + или -"""
+                           )
+    admin_bot.register_next_step_handler(message, add_users_ex)
+
+
 @admin_bot.message_handler(commands=['users_exel'])
 def send_users (message):
-    get_exel_users()
-    with open('people.xlsx', 'rb') as file:
+    output_file = get_exel_users(message.chat.id)
+    with open(output_file, 'rb') as file:
                 admin_bot.send_document(
                 chat_id=message.chat.id,
                 document=file
                 )
+    if os.path.exists(output_file):
+                os.remove(output_file)
 
 
 @admin_bot.message_handler(commands=['create_class'])
@@ -611,7 +679,7 @@ def callback_handler(call):
                                   text=f"""Вы уверены, что хотите удалить класс? 
 При удалении класса также будут удалены все ученики, относящиеся к нему""",
                                   reply_markup=create_keyboard_class_accept(cl_name))
-          
+   
     elif call.data == 'close':
         admin_bot.delete_message(chat_id=ADMIN_CHAT_ID, message_id=call.message.message_id)
     
@@ -634,6 +702,31 @@ def delete_class(class_name):
     finally:
         cursor.close()
         conn.close()
+
+
+def add_users_ex(message):
+    print('helo')
+    file_extension = os.path.splitext(message.document.file_name)[1].lower()
+    if message.document.file_id and file_extension == '.xlsx': 
+        file_info = admin_bot.get_file(message.document.file_id)
+        downloaded_file = admin_bot.download_file(file_info.file_path)
+
+        # Сохраняем файл на диск
+        file_path = os.path.join(os.getcwd(), message.document.file_name)
+        
+        with open(file_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+
+        text = users_accept(file_path)
+
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text=text)       
+
+        # Удаляем файл после обработки
+        os.remove(file_path)
+    else: 
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID,
+                               text='Произошла ошибка, попробуйте заново, проверьте файл, он долежн быть с расширением .xlsx')
+
 
 if __name__ == '__main__':
 

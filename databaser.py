@@ -3,7 +3,7 @@ from sqlite3 import Error
 from datetime import datetime
 import pandas as pd
 import os
-
+from admin_main import users_accept
 
 def create_connection():
     """
@@ -518,4 +518,6 @@ def oneuse():
     cursor.close()
     conn.close()
 
-clean_table('lunch_23_01_2025')
+
+
+clean_table('users')

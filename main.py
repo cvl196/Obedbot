@@ -102,6 +102,23 @@ def init_db():
         finally:
             conn.close()
 
+def db_check_username(username):
+    conn = create_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_name FROM users WHERE user_name = ?", (username,))
+            
+            result = cursor.fetchone()
+            return result is not None
+            
+        except Error as e:
+            print(f"Ошибка при проверке ID: {e}")
+            return False
+        finally:
+            conn.close()
+    return False
+
 def db_check_id(chat_id):
     conn = create_connection()
     if conn:
@@ -125,7 +142,7 @@ def db_check_status_pupil(chat_id):
         cursor = conn.cursor()
         cursor.execute("SELECT status FROM users WHERE chat_id = ?", (chat_id,))
         result = cursor.fetchone()        
-        if result[0] == 'pupil':
+        if result is not None and len(result) > 0 and result[0] == 'pupil':
             conn.close()
             return True            
         else:
@@ -140,7 +157,7 @@ def db_check_status_teacher(chat_id):
         cursor.execute("SELECT status FROM users WHERE chat_id = ?", (chat_id,))
         result = cursor.fetchone()
         
-        if result[0] == 'teacher':
+        if result is not None and result[0] == 'teacher':
             conn.close()
             return True            
         else:
@@ -148,6 +165,34 @@ def db_check_status_teacher(chat_id):
             
             return False
 
+def db_check_status_pupil_by_username(username):
+    conn = create_connection()
+    if conn is not None:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM users WHERE user_name = ?", (username,))
+        result = cursor.fetchone()
+        
+        if result[0] == 'pupil':
+            conn.close()
+            return True
+        else:
+            conn.close()
+            return False
+        
+def db_check_status_teacher_by_username(username):
+    conn = create_connection()
+    if conn is not None:
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM users WHERE user_name = ?", (username,))
+        result = cursor.fetchone()
+        
+        if result[0] == 'teacher':
+            conn.close()
+            return True
+        else:
+            conn.close()
+            return False
+        
 def db_get_lunch_info_teacher(table_name, clas):
     conn = create_connection()
     if conn is not None:
@@ -501,7 +546,7 @@ def get_user_info(chat_id):
     user_info = cursor.fetchone()
     return user_info
 
-def generate_attendance_report(start_date_str, end_date_str, grade):
+def generate_attendance_report(start_date_str, end_date_str, grade, chat_id):
     # Преобразуем строки в формат Timestamp
     start_date = pd.to_datetime(start_date_str, format="%d.%m.%Y")
     end_date = pd.to_datetime(end_date_str, format="%d.%m.%Y")
@@ -579,7 +624,9 @@ def generate_attendance_report(start_date_str, end_date_str, grade):
                 elif reason == 'ill':
                     report_df.at[key, date] = 'Б'  # Заявление по болезни
     # Сохранение в Excel файл
-    output_file = 'attendance_report.xlsx'
+    file_name = f'report_{chat_id}.xlsx'
+    current_directory = os.getcwd()
+    output_file = os.path.join(current_directory, 'xlsx', file_name)
     report_df.to_excel(output_file, index=True, sheet_name='Attendance Report')
 
     # Форматирование ширины столбцов, выравнивание ячеек и границы
@@ -612,7 +659,7 @@ def generate_attendance_report(start_date_str, end_date_str, grade):
         sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
 
     workbook.save(output_file)  # Сохраняем изменения в файле
-    return output_file
+    return file_name
 
 def add_last_msg(chat_id, last_msg): 
     conn = create_connection()
@@ -631,7 +678,7 @@ def add_last_msg(chat_id, last_msg):
         finally:
             conn.close()
 
-def get_exel_users(clas = None): 
+def get_exel_users(chat_id, clas = None ): 
     conn = create_connection()
     cursor = conn.cursor()
     if clas: 
@@ -640,13 +687,27 @@ def get_exel_users(clas = None):
         cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ? ORDER BY grade ASC ", ('pupil',))
 
     people = cursor.fetchall()
-        
+
+    processed_people = []
+    for person in people:
+        first_name, last_name, grade, phone, user_name, privil = person
+        # Заменяем privil
+        if privil == 0:
+            privil = '-'
+        elif privil == 1:
+            privil = '+'
+
+        # Добавляем обработанную запись в новый список
+        processed_people.append((first_name, last_name, grade, phone, user_name, privil))
+    people = processed_people
     people_df = pd.DataFrame(data = people,
                             
                             columns = ['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк' ] 
                              )
     
-    output_file = 'people.xlsx'
+    current_directory = os.getcwd()
+    file_name = f'users_{chat_id}.xlsx'
+    output_file = os.path.join(current_directory, 'xlsx', file_name)
     people_df.to_excel(output_file, index= False, sheet_name='people')
 
     cursor.close()
@@ -682,6 +743,7 @@ def get_exel_users(clas = None):
         sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
 
     workbook.save(output_file)
+    return output_file
 
 
 
@@ -834,7 +896,7 @@ def start(message):
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
     date = tomorrow.strftime("%d.%m")
-    
+    print(message.chat.username, message.chat.id)
     create_table(date)
     
     # Проверяем, есть ли пользователь в базе данных
@@ -860,14 +922,52 @@ def start(message):
                 f"Добрый день, {message.chat.first_name} вы приняты в базу данных как учитель! Выберите действие:",
                 reply_markup=create_keyboard_main_teacher()
             )
+    
+    elif db_check_username(f"@{message.chat.username}"):        
+        chat_id = message.chat.id
+        user_name = f"@{message.chat.username}"
+        
+        conn = create_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE users SET chat_id = ? WHERE user_name = ?", (chat_id, user_name))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        print(chat_id, user_name)
+
+
+        last_msg = get_user_info(message.chat.id)  # Получаем информацию о пользователе
+        
+        
+        # Удаляем предыдущее сообщение, если оно существует
+        if last_msg is not None and len(last_msg) > 9 and last_msg[9] is not None:  # Предполагаем, что last_msg находится в 6-й колонке
+            bot.delete_message(chat_id=message.chat.id, message_id=last_msg[9])  # Удаляем предыдущее сообщение
+        
+        
+        
+        if db_check_status_pupil(message.chat.id):
+            msg = bot.send_message(
+                message.chat.id,
+                f"Добрый день, {message.chat.first_name}! Выберите действие:",
+                reply_markup=create_keyboard_main()
+            )
+        elif db_check_status_teacher(message.chat.id):
+            msg = bot.send_message(
+                message.chat.id,
+                f"Добрый день, {message.chat.first_name} вы приняты в базу данных как учитель! Выберите действие:",
+                reply_markup=create_keyboard_main_teacher()
+            )
+
     else:
         msg = bot.send_message(
             message.chat.id,
             f"Добрый день, {message.chat.first_name}! Для исползования бота, вам необходимо зарегестирвоваться",
             reply_markup=create_keyboard_reg1()
         )
-    last_msg = msg.message_id
-    add_last_msg(chat_id = message.chat.id, last_msg = last_msg)
+    if msg is not None:
+        last_msg = msg.message_id
+        add_last_msg(chat_id=message.chat.id, last_msg=last_msg)
+    
     
 
 # Обработчик callback-запросов
@@ -1089,13 +1189,17 @@ def callback_handler(call):
             clas = cursor.fetchone()[0]
             cursor.close()     
             conn.close()
-            get_exel_users(clas=clas)
-            with open('people.xlsx', 'rb') as file:
+            output_file = get_exel_users(chat_id=chat_id, clas=clas)
+            
+            with open(output_file, 'rb') as file:
                 bot.send_document(
                 chat_id=call.message.chat.id,
                 document=file
                 )
 
+
+            if os.path.exists(output_file):
+                os.remove(output_file)
             last_msg = get_user_info(call.message.chat.id)    
             if last_msg[9]:  # Предполагаем, что last_msg находится в 6-й колонке
                 try: 
@@ -1432,12 +1536,19 @@ def get_phone(message):
 ###создаие отчета
 def get_report(message, grade): 
     dates = message.text.split('-')
-    generate_attendance_report(dates[0], dates[1], grade)    
-    with open('attendance_report.xlsx', 'rb') as file:
+    file_name = generate_attendance_report(dates[0], dates[1], grade, message.chat.id)
+    current_directory = os.getcwd()
+    output_file = os.path.join(current_directory, 'xlsx', file_name)
+
+    with open(output_file, 'rb') as file:
         bot.send_document(
             chat_id=message.chat.id,
             document=file
         )
+
+    if os.path.exists(output_file):
+        os.remove(output_file)
+
     bot.send_message(chat_id=message.chat.id,
                      text=f"Добрый день, {message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
                      reply_markup=create_keyboard_main_teacher())
