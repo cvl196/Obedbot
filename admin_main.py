@@ -9,7 +9,7 @@ import pytz
 import sqlite3
 from sqlite3 import Error
 import os
-from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info,get_exel_users, db_check_id   
+from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info, db_check_id, get_excel_users_admin,clean_req_send  
 import pandas as pd
 
 
@@ -371,7 +371,7 @@ def add_users (message):
 
 @admin_bot.message_handler(commands=['users_exel'])
 def send_users (message):
-    output_file = get_exel_users(message.chat.id)
+    output_file = get_excel_users_admin(message.chat.id)
     with open(output_file, 'rb') as file:
                 admin_bot.send_document(
                 chat_id=message.chat.id,
@@ -461,6 +461,7 @@ def callback_handler(call):
             cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
             conn.commit()
             conn.close()
+            clean_req_send(chat_id)
 
 
 
@@ -468,9 +469,9 @@ def callback_handler(call):
             admin_bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text="Произошла ошибка при добавлении пользователя"
-                
+                text="Произошла ошибка при добавлении пользователя"                
             )
+            clean_req_send(chat_id)
     
     elif call.data.startswith('block$'):        
         chat_id = call.data.split('$')[1]
@@ -491,6 +492,7 @@ def callback_handler(call):
             text="Вы были заблокированы, если блокировка произошла по ошибке, обратитесь к администратору",
             reply_markup=create_keyboard_reg1()
         )
+        clean_req_send(chat_id)
         
     elif call.data.startswith('reject$'):
         winfo = get_waitlist_info(call.message.chat.id)
@@ -512,6 +514,7 @@ def callback_handler(call):
             text="Ваш запрос на регистрацию отклонен, перепроверьте данные и отправьте запрос еще раз.",
             reply_markup=create_keyboard_reg1()
         )
+        clean_req_send(chat_id)
     
     elif call.data.startswith('accept_teacher$'):
         chat_id = call.data.split('$')[1]
@@ -568,6 +571,8 @@ def callback_handler(call):
         cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
         conn.commit()
         conn.close()
+
+        clean_req_send(chat_id)
 
     elif call.data.startswith('delete$'):
         chat_id = call.data.split('$')[1]

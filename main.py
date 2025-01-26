@@ -65,6 +65,7 @@ def init_db():
                     last_msg INTEGER,
                     send_teacher BOOLEAN
                     
+                    
                 )
             ''')
             # Проверяем наличие таблицы classes
@@ -84,7 +85,8 @@ def init_db():
                     phone TEXT,
                     status TEXT,
                     user_name TEXT,
-                    privil BOOLEAN
+                    privil BOOLEAN,
+                    send_req BOOLEAN
                 )
             ''')
             # Проверяем наличие таблицы blocked_users
@@ -247,8 +249,14 @@ def db_get_lunch_info_teacher(table_name, clas):
             return info 
             
         except Error as e:
-            print(f"Ошибка при получении данных: {e}")
-            return "Никто еще не проголосовал, ожидайте"
+            tz = pytz.timezone('Asia/Yekaterinburg')
+            today = datetime.now(tz)
+            date_today = today.strftime("%d.%m")
+            tomorrow = datetime.now(tz) + timedelta(days=1)
+            date = tomorrow.strftime("%d.%m")
+            create_table(date_today)
+            create_table(date)
+            return db_get_lunch_info_teacher(table_name, clas)
         finally:
             conn.close()
     return "Ошибка подключения к базе данных"
@@ -265,7 +273,7 @@ def create_table(date):
             
             if cursor.fetchone()[0] == 0:
                 cursor.execute(f'''
-                    CREATE TABLE {table_name} (
+                    CREATE TABLE IF NOT EXISTS {table_name} (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
                         chat_id INTEGER NOT NULL,
                         name TEXT,
@@ -383,7 +391,6 @@ def notify_teacher(table_name, date, chat_id, conn, cursor):
                 cursor.execute("UPDATE users SET send_teacher = ?, last_msg = ? WHERE chat_id = ?", (True, tmp_msg.message_id, teacher[0]))
     conn.commit()
 
-
 def get_lunch_info(chat_id, today=False):
     
     tz = pytz.timezone('Asia/Yekaterinburg')
@@ -460,7 +467,7 @@ def get_lunch_info(chat_id, today=False):
             return record_info
             
         except Error as e:
-            return f"Ошибка при получении данных: {e}"
+            print (e)
         finally:
             conn.close()
     return "Ошибка подключения к базе данных"
@@ -745,7 +752,98 @@ def get_exel_users(chat_id, clas = None ):
     workbook.save(output_file)
     return output_file
 
+def get_excel_users_admin(chat_id):
+    conn = create_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil, status FROM users ORDER BY status DESC, grade ASC, last_name ASC")
 
+    
+
+    people = cursor.fetchall()
+
+    processed_people = []
+    for person in people:
+        first_name, last_name, grade, phone, user_name, privil, status = person
+        # Заменяем privil
+        if privil == 0:
+            privil = '-'
+        elif privil == 1:
+            privil = '+'
+        if status == 'pupil':
+            status = 'Ученик'
+        elif status == 'teacher':
+            status = 'Учитель'
+        
+
+        # Добавляем обработанную запись в новый список
+        processed_people.append((first_name, last_name, grade, phone, user_name, privil, status))
+    
+    people = processed_people
+    people_df = pd.DataFrame(data = people,
+                            
+                            columns = ['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк', 'Роль' ] 
+                             )
+    
+    current_directory = os.getcwd()
+    file_name = f'users_{chat_id}.xlsx'
+    output_file = os.path.join(current_directory, 'xlsx', file_name)
+    people_df.to_excel(output_file, index= False, sheet_name='people')
+
+    cursor.close()
+    conn.close()
+    
+    #Формат
+    workbook = load_workbook(output_file)
+    sheet = workbook.active
+
+    thin_border = Border(left=Side(style='thin'), 
+                         right=Side(style='thin'), 
+                         top=Side(style='thin'), 
+                         bottom=Side(style='thin'))  # Определяем стиль границы
+
+    for i, column in enumerate(sheet.columns):
+        max_length = 0
+        column = [cell for cell in column]
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+                cell.alignment = Alignment(horizontal='center')  # Выравнивание по центру
+                cell.border = thin_border  # Применяем границы к ячейке
+            except:
+                pass
+        
+        # Устанавливаем отступы для первого столбца и остальных
+        
+        adjusted_width = (max_length + 4)  # Отступ +4 для первого столбца
+        
+            
+        
+        sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
+
+    workbook.save(output_file)
+    return output_file
+
+def check_req_send(chat_id):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT send_req FROM users_waitlist WHERE chat_id = ?", (chat_id,))
+    result = cursor.fetchone()
+    if result is not None: 
+        result = result
+    else:
+        result = False
+    return result 
+        
+def clean_req_send(chat_id):
+    conn = create_connection()
+    cursor = conn.cursor()
+    
+    
+    cursor.execute("UPDATE users_waitlist SET send_req =? WHERE chat_id = ?", (False, chat_id))
+    conn.commit()
+    conn.close()
 
 
 def create_keyboard1():
@@ -843,6 +941,7 @@ def create_keyboard_main_teacher():
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на сегодня", callback_data="get_lunch_info_teacher_today"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей", callback_data="get_users_exel"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Получить информацию о обедах других классов", callback_data="other_classes"))
     keyboard.add(telebot.types.InlineKeyboardButton("Мой профиль", callback_data="profile_user"))
     return keyboard
 
@@ -891,12 +990,41 @@ def create_keyboard_classes_edit():
     
     return keyboard
 
+def create_keyboard_classes_lunch(): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""SELECT class FROM classes""")
+    classes = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    print (classes)
+    for cl in classes: 
+        keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_lunch${cl[0]}"))
+    
+    return keyboard
+
+def create_keyboard_classes_lunch_day(clas): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
+    tz = pytz.timezone('Asia/Yekaterinburg')
+    tommorow = datetime.now(tz) + timedelta(days=1)
+    today = datetime.now(tz)
+    date_today = today.strftime("%d_%m_%Y")
+    date = tommorow.strftime("%d_%m_%Y")    
+    table_name = f"lunch_{date}"
+    table_name_today = f"lunch_{date_today}"
+    
+    keyboard.add(telebot.types.InlineKeyboardButton(text=f"{date_today}", callback_data=f"class_day_lunch${clas}${table_name_today}$today"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text=f"{date}", callback_data=f"class_day_lunch${clas}${table_name}$tommorow"))
+    return keyboard
+
 @bot.message_handler(commands=['start'])
 def start(message):
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
     date = tomorrow.strftime("%d.%m")
-    print(message.chat.username, message.chat.id)
+    
     create_table(date)
     
     # Проверяем, есть ли пользователь в базе данных
@@ -988,6 +1116,12 @@ def callback_handler(call):
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=f"Вы заблокированы, обратитесь к администратору",)
+            elif  check_req_send(call.message.chat.id): 
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"Заявка уже отправленна, ожидайте подтверждения",)
+
             elif not check_blocked_user(call.message.chat.id):
                 bot.edit_message_text(
                     chat_id=call.message.chat.id,
@@ -995,9 +1129,7 @@ def callback_handler(call):
                     text=f"Введите ваше имя")               
           
                 bot.register_next_step_handler(call.message, get_name)  
-
-    
-
+   
         elif call.data == "edit":
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
@@ -1018,7 +1150,8 @@ def callback_handler(call):
             cursor = conn.cursor()
             tmp_msg = tmp_msg.message_id
             
-            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, call.message.chat.id))
+            cursor.execute("UPDATE users SET last_msg = ?  WHERE chat_id = ?", (tmp_msg, call.message.chat.id))
+            cursor.execute("UPDATE users_waitlist SET  send_req = ? WHERE chat_id = ?", (True, call.message.chat.id))
             conn.commit()
             conn.close()
 
@@ -1169,7 +1302,7 @@ def callback_handler(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
+                text=f"<b><u>Обеды {date_today}</u></b>\n{lunch_info}",
                 reply_markup=create_keyboard_back(),
                 parse_mode='HTML'
             )
@@ -1239,7 +1372,42 @@ def callback_handler(call):
 Имя пользователя: {winfo[7]}
 Льготник: {'Да' if winfo[8] else 'Нет' }""",
                                         reply_markup = create_keyboard_profile())
-    
+
+        elif call.data == "other_classes":
+            bot.edit_message_text(chat_id=call.message.chat.id,
+                                  message_id=call.message.id,
+                                  text="Укажите класс для получения информации",
+                                  reply_markup=create_keyboard_classes_lunch())
+
+        elif call.data.startswith('class_lunch$'):
+            clas = call.data.split('$')[0]
+            bot.edit_message_text(chat_id=call.message.chat.id,
+                                  message_id=call.message.id,
+                                  text="За какой день вы ходите получить информацию?",
+                                  reply_markup=create_keyboard_classes_lunch_day(clas))
+            pass
+
+        elif call.data.startswith('class_day_lunch'):
+            clas = call.data.split('$')[1]
+            table_name = call.data.split('$')[2]
+            day = call.data.split('$')[3]
+            if day == "today":
+                day = date_today
+            elif day == "tommorow":
+                day = date
+            
+            lunch_info = db_get_lunch_info_teacher(table_name=table_name, clas=clas)
+
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"<b><u>Обеды {day}</u></b>\n{lunch_info}",
+                reply_markup=create_keyboard_back(),
+                parse_mode='HTML'
+            )
+            
+
+
     elif db_check_id(call.message.chat.id) and db_check_status_pupil(call.message.chat.id):
         
         if call.data == "yes":
@@ -1312,10 +1480,9 @@ def callback_handler(call):
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=f"Ожидайте, подтверждение. Как только администратор подтвердит ваш запрос, ваши данные изменятся.",
-                reply_markup = create_keyboard_back()
-
-
-            )
+                reply_markup = create_keyboard_back())
+            
+            
             admin_bot.send_message(
                 ADMIN_CHAT_ID,
                 f"""Новый запрос на изменение данных

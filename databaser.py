@@ -520,4 +520,4 @@ def oneuse():
 
 
 
-clean_table('users')
+clean_table('users_waitlist')
