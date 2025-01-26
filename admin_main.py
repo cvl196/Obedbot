@@ -212,6 +212,10 @@ def users_accept(file):
         cursor.execute("SELECT COUNT(*) FROM users WHERE user_name = ?", (username,))
         exists = cursor.fetchone()[0]
 
+        cursor.execute("SELECT * FROM classes WHERE class = ?", (grade,))
+        if cursor.fetchone() is None:
+            exists = 1
+        
         if exists == 0:  # Если пользователя нет, добавляем его
             cursor.execute(
                         "INSERT INTO users (first_name, last_name, grade, phone, status, user_name, privil) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -369,7 +373,7 @@ def add_users (message):
     admin_bot.register_next_step_handler(message, add_users_ex)
 
 
-@admin_bot.message_handler(commands=['users_exel'])
+@admin_bot.message_handler(commands=['users_excel'])
 def send_users (message):
     output_file = get_excel_users_admin(message.chat.id)
     with open(output_file, 'rb') as file:
@@ -597,41 +601,55 @@ def callback_handler(call):
     elif call.data.startswith('delete_acception$'):
         chat_id = call.data.split('$')[1]
         winfo = get_user_info(chat_id)
-        
-        if winfo[6] == 'teacher':
-            status = 'Учитель'
-        else:
-            status = 'Ученик'
-        admin_bot.edit_message_text(chat_id=ADMIN_CHAT_ID,                                     
-                              message_id=call.message.message_id,
-                                text=f"""Вы уверенны что ходите удалить пользователя? 
+        if winfo is not None:
+            if winfo[6] == 'teacher':
+                status = 'Учитель'
+            else:
+                status = 'Ученик'
+            admin_bot.edit_message_text(chat_id=ADMIN_CHAT_ID,                                     
+                                  message_id=call.message.message_id,
+                                    text=f"""Вы уверенны что ходите удалить пользователя? 
 Имя: {winfo[2]}
 Фамилия: {winfo[3]}
 Класс: {winfo[4]}
 Статус: {status}
 Телефон: {winfo[5]}
 Имя пользователя: {winfo[7]}
-Льготник: {'Да' if winfo[7] else 'Нет' }""",
-                                
+Льготник: {'Да' if winfo[7] else 'Нет' }""",                                
                                 reply_markup=create_keyboard_delete_acception(chat_id))
-    
+        
+        else: 
+            admin_bot.edit_message_text(chat_id=ADMIN_CHAT_ID,                                     
+                                message_id=call.message.message_id,
+                                text=f"""Вы уверенны что ходите удалить пользователя?""",
+                                reply_markup=create_keyboard_delete_acception(chat_id))
+            
+
     elif call.data.startswith('profile$'):
         chat_id = call.data.split('$')[1]
+        
         winfo = get_user_info(chat_id)
-        if winfo[6] == 'teacher':
-            status = 'Учитель'
-        else:
-            status = 'Ученик'
-        admin_bot.edit_message_text (chat_id=ADMIN_CHAT_ID, 
-                                    message_id=call.message.message_id,
-                               text=f"""Имя: {winfo[2]}
+        
+        if winfo is not None: 
+            if winfo[6] == 'teacher':
+                status = 'Учитель'
+            else:
+                status = 'Ученик'
+            admin_bot.edit_message_text (chat_id=ADMIN_CHAT_ID, 
+                                        message_id=call.message.message_id,
+                                        text=f"""Имя: {winfo[2]}
 Фамилия: {winfo[3]}
 Класс: {winfo[4]}
 Статус: {status}
 Телефон: {winfo[5]}
 Имя пользователя: {winfo[7]}
 Льготник: {'Да' if winfo[8] else 'Нет' }""",
-                               reply_markup=create_keyboard_profile(chat_id))
+                                         reply_markup=create_keyboard_profile(chat_id))
+        else:
+            admin_bot.edit_message_text (chat_id=ADMIN_CHAT_ID, 
+                                        message_id=call.message.message_id,
+                                        text=f"""Пользователь не найден""",
+                                         reply_markup=create_keyboard_close())
         
     elif call.data.startswith('delete_class$'): 
         cl_name = call.data.split('$')[1] 
