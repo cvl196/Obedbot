@@ -829,7 +829,7 @@ def check_req_send(chat_id):
     conn = create_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT send_req FROM users_waitlist WHERE chat_id = ?", (chat_id,))
-    result = cursor.fetchone()
+    result = cursor.fetchone()[0]
     if result is not None: 
         result = result
     else:

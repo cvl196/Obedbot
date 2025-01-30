@@ -5,7 +5,14 @@
       <webServer id="141dea2c-9bbd-48be-9395-a73012f28556" name="host" url="http://37.140.192.225">
         <fileTransfer rootFolder="/obed_bot" host="37.140.192.225" port="21">
           <advancedOptions>
-            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="f6070186-7781-4854-ad04-b5a60405cd65" name="aeza" url="http://77.221.151.229">
+        <fileTransfer rootFolder="/root/obed_bot" accessType="SFTP" host="77.221.151.229" port="22" sshConfigId="5bd5c9b5-24a8-4135-9137-3a51eb3d8292" sshConfig="root@77.221.151.229:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
         </fileTransfer>
       </webServer>
