@@ -1708,24 +1708,29 @@ def get_phone(message):
 
 ###создаие отчета
 def get_report(message, grade): 
-    dates = message.text.split('-')
-    file_name = generate_attendance_report(dates[0], dates[1], grade, message.chat.id)
-    current_directory = XLSX_PATH
-    output_file = os.path.join(current_directory, 'xlsx', file_name)
+    try:
+        dates = message.text.split('-')
+        file_name = generate_attendance_report(dates[0], dates[1], grade, message.chat.id)
+        current_directory = XLSX_PATH
+        output_file = os.path.join(current_directory, 'xlsx', file_name)
 
-    with open(output_file, 'rb') as file:
-        bot.send_document(
-            chat_id=message.chat.id,
-            document=file
-        )
+        with open(output_file, 'rb') as file:
+            bot.send_document(
+                chat_id=message.chat.id,
+                document=file
+            )
 
-    if os.path.exists(output_file):
-        os.remove(output_file)
+        if os.path.exists(output_file):
+            os.remove(output_file)
 
-    bot.send_message(chat_id=message.chat.id,
-                     text=f"Добрый день, {message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
-                     reply_markup=create_keyboard_main_teacher())
-    
+        bot.send_message(chat_id=message.chat.id,
+                         text=f"Добрый день, {message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
+                         reply_markup=create_keyboard_main_teacher())
+    except: 
+        bot.send_message(chat_id=message.chat.id,
+                         text=f"Ошибка, проверьте верность промежутка, и попробуйте заново",
+                         reply_markup=create_keyboard_back())
+
 ###изменение данных 
 
 
