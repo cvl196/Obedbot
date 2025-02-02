@@ -2,4 +2,4 @@
 *.db
 .env
 *.xlsx
-.idea
+*.idea

@@ -13,7 +13,8 @@ import pandas as pd
 from openpyxl.utils import get_column_letter  # Импортируем функцию для получения букв столбцов
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Side  # Импортируем классы для выравнивания и границ
-
+import logging
+import traceback
 
 # Получаем текущий путь
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +25,7 @@ load_dotenv()
 TOKEN = os.getenv('TOKEN')
 ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+XLSX_PATH = os.getenv('XLSX_PATH')
 # Инициализация ботов
 bot = telebot.TeleBot(TOKEN)
 admin_bot = telebot.TeleBot(ADMIN_TOKEN)
@@ -632,7 +634,7 @@ def generate_attendance_report(start_date_str, end_date_str, grade, chat_id):
                     report_df.at[key, date] = 'Б'  # Заявление по болезни
     # Сохранение в Excel файл
     file_name = f'report_{chat_id}.xlsx'
-    current_directory = os.getcwd()
+    current_directory = XLSX_PATH
     output_file = os.path.join(current_directory, 'xlsx', file_name)
     report_df.to_excel(output_file, index=True, sheet_name='Attendance Report')
 
@@ -712,7 +714,7 @@ def get_exel_users(chat_id, clas = None ):
                             columns = ['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк' ] 
                              )
     
-    current_directory = os.getcwd()
+    current_directory = XLSX_PATH
     file_name = f'users_{chat_id}.xlsx'
     output_file = os.path.join(current_directory, 'xlsx', file_name)
     people_df.to_excel(output_file, index= False, sheet_name='people')
@@ -785,7 +787,7 @@ def get_excel_users_admin(chat_id):
                             columns = ['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк', 'Роль' ] 
                              )
     
-    current_directory = os.getcwd()
+    current_directory = XLSX_PATH
     file_name = f'users_{chat_id}.xlsx'
     output_file = os.path.join(current_directory, 'xlsx', file_name)
     people_df.to_excel(output_file, index= False, sheet_name='people')
@@ -829,9 +831,9 @@ def check_req_send(chat_id):
     conn = create_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT send_req FROM users_waitlist WHERE chat_id = ?", (chat_id,))
-    result = cursor.fetchone()[0]
+    result = cursor.fetchone()
     if result is not None: 
-        result = result
+        result = result[0]
     else:
         result = False
     return result 
@@ -1313,39 +1315,43 @@ def callback_handler(call):
                                 text = "Выберите класс для отчета",
                                 reply_markup = create_keyboard_classes_report())      
         
-        elif call.data == "get_users_exel":             
-             # Удаляем предыдущее сообщение
-            chat_id = call.message.chat.id
-            conn = create_connection()
-            cursor = conn.cursor()
-            cursor.execute('SELECT grade FROM users WHERE chat_id = ?', (chat_id,))
-            clas = cursor.fetchone()[0]
-            cursor.close()     
-            conn.close()
-            output_file = get_exel_users(chat_id=chat_id, clas=clas)
-            
-            with open(output_file, 'rb') as file:
-                bot.send_document(
-                chat_id=call.message.chat.id,
-                document=file
-                )
+        elif call.data == "get_users_exel":  
+            try:           
+                 # Удаляем предыдущее сообщение
+                chat_id = call.message.chat.id
+                conn = create_connection()
+                cursor = conn.cursor()
+                cursor.execute('SELECT grade FROM users WHERE chat_id = ?', (chat_id,))
+                clas = cursor.fetchone()[0]
+                cursor.close()     
+                conn.close()
+                output_file = get_exel_users(chat_id=chat_id, clas=clas)
+
+                with open(output_file, 'rb') as file:
+                    bot.send_document(
+                    chat_id=call.message.chat.id,
+                    document=file
+                    )
 
 
-            if os.path.exists(output_file):
-                os.remove(output_file)
-            last_msg = get_user_info(call.message.chat.id)    
-            if last_msg[9]:  # Предполагаем, что last_msg находится в 6-й колонке
-                try: 
-                    bot.delete_message(chat_id=call.message.chat.id, message_id=last_msg[9]) 
-                except: 
-                    pass
-            
-            msg = bot.send_message(chat_id=call.message.chat.id,
-                     text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
-                     reply_markup=create_keyboard_main_teacher())
-            
-            
-            add_last_msg(chat_id = call.message.chat.id, last_msg = msg.message_id)
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+                last_msg = get_user_info(call.message.chat.id)    
+                if last_msg[9]:  # Предполагаем, что last_msg находится в 6-й колонке
+                    try: 
+                        bot.delete_message(chat_id=call.message.chat.id, message_id=last_msg[9]) 
+                    except: 
+                        pass
+                    
+                msg = bot.send_message(chat_id=call.message.chat.id,
+                         text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
+                         reply_markup=create_keyboard_main_teacher())
+
+
+                add_last_msg(chat_id = call.message.chat.id, last_msg = msg.message_id)
+            except Exception as e:
+                # Запись ошибки в лог
+                logging.error(f"Ошибка в блоке get_users_exel: {e}\n{traceback.format_exc()}")
           
         elif call.data.startswith('class_report$'):
             grade = call.data.split('$')[1]
@@ -1704,7 +1710,7 @@ def get_phone(message):
 def get_report(message, grade): 
     dates = message.text.split('-')
     file_name = generate_attendance_report(dates[0], dates[1], grade, message.chat.id)
-    current_directory = os.getcwd()
+    current_directory = XLSX_PATH
     output_file = os.path.join(current_directory, 'xlsx', file_name)
 
     with open(output_file, 'rb') as file:

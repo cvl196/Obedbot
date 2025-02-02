@@ -18,7 +18,7 @@ load_dotenv()
 TOKEN = os.getenv('TOKEN')
 ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
 ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
-
+XLSX_PATH = os.getenv('XLSX_PATH')
 
 bot = telebot.TeleBot(TOKEN)
 admin_bot = telebot.TeleBot(ADMIN_TOKEN)
@@ -358,7 +358,7 @@ def show_classes (message):
 @admin_bot.message_handler(commands=['add_users'])
 def add_users (message):
 
-    current_directory = os.getcwd()
+    current_directory = XSLX_PATH
     file_name =  os.path.join(current_directory, 'xlsx', 'pattern.xlsx')
 
     with open (file_name,'rb') as file: 
@@ -405,6 +405,34 @@ def callback_handler(call):
             )
             return
         
+        conn = create_connection()
+        cursor = conn.cursor()
+        print(chat_id)
+        
+        cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
+        last_msg = cursor.fetchone()
+        
+        if last_msg and last_msg[0]: 
+            print(last_msg)
+            bot.delete_message(chat_id=chat_id, 
+                               message_id = last_msg[0])
+        if db_check_id(chat_id=chat_id):
+            tmp_msg = bot.send_message(
+                chat_id=chat_id,
+                text="Ваш запрос на изменение данных принят. Данные успешно изменены!",
+                reply_markup=create_keyboard_back()
+            )
+        else: 
+            tmp_msg = bot.send_message(
+                chat_id=chat_id,
+                text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
+                reply_markup=create_keyboard_back()
+            )
+        tmp_msg = tmp_msg.message_id
+        
+        cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
+        conn.commit()
+        conn.close()
         if user_accept(chat_id, 'pupil'):
 
             if db_check_id(chat_id=chat_id):
@@ -435,36 +463,7 @@ def callback_handler(call):
 Льготник: {'Да' if winfo[7] else 'Нет' }"""
                 )
             
-            conn = create_connection()
-            cursor = conn.cursor()
-            print(chat_id)
-            
-            cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
-            last_msg = cursor.fetchone()
-            
-            if last_msg and last_msg[0]: 
-                print(last_msg)
-                bot.delete_message(chat_id=chat_id, 
-                                   message_id = last_msg[0])
-
-
-            if db_check_id(chat_id=chat_id):
-                tmp_msg = bot.send_message(
-                    chat_id=chat_id,
-                    text="Ваш запрос на изменение данных принят. Данные успешно изменены!",
-                    reply_markup=create_keyboard_back()
-                )
-            else: 
-                tmp_msg = bot.send_message(
-                    chat_id=chat_id,
-                    text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
-                    reply_markup=create_keyboard_back()
-                )
-            tmp_msg = tmp_msg.message_id
-            
-            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
-            conn.commit()
-            conn.close()
+           
             clean_req_send(chat_id)
 
 
@@ -735,7 +734,7 @@ def add_users_ex(message):
         downloaded_file = admin_bot.download_file(file_info.file_path)
 
         # Сохраняем файл на диск
-        file_path = os.path.join(os.getcwd(), message.document.file_name)
+        file_path = os.path.join(XLSX_PATH, message.document.file_name)
         
         with open(file_path, 'wb') as new_file:
             new_file.write(downloaded_file)

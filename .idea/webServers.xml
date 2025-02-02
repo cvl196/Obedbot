@@ -16,6 +16,20 @@
           </advancedOptions>
         </fileTransfer>
       </webServer>
+      <webServer id="b05251b0-dc26-4af7-ad0c-d5d0b8f4ba16" name="reg">
+        <fileTransfer accessType="SFTP" host="77.221.151.229" port="22" sshConfigId="5bd5c9b5-24a8-4135-9137-3a51eb3d8292" sshConfig="root@77.221.151.229:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+      <webServer id="a7b84643-7e10-49b6-904c-599c8bfe4ca3" name="reg_ftp" url="http://79.174.84.143">
+        <fileTransfer host="79.174.84.143" port="21">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
     </option>
   </component>
 </project>
