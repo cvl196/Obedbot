@@ -49,35 +49,38 @@ elif 21 <= current_hour < 23:
 else:
     greeting = "Здравствуйте"  
 print(users_to_send)
-for user in users_to_send: 
-    last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0] 
-    if last_msg:  
-        try:
-            bot.delete_message(chat_id=user, message_id=last_msg)  
-        except Exception as e:
-            print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  # Логируем ошибку
-    else:
-        print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
-    message = bot.send_message(chat_id=user, 
-                     text=f"""{greeting}, проголосуйте пожалуйста
-Вы будете завтра обедать?""",
-                     reply_markup=create_keyboard1())
-    
-    # Добавляем ID отправленного сообщения в таблицу users
-    cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (message.message_id, user))
+bot.send_message(ADMIN_CHAT_ID, f"началось голосование {greeting}, {table_name}", parse_mode='HTML')
+try:
+    for user in users_to_send:
+        last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0]
+        if last_msg:
+            try:
+                bot.delete_message(chat_id=user, message_id=last_msg)
+            except Exception as e:
+                print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  # Логируем ошибку
+        else:
+            print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
+        message = bot.send_message(chat_id=user,
+                         text=f"""{greeting}, проголосуйте пожалуйста
+    Вы будете завтра обедать?""",
+                         reply_markup=create_keyboard1())
+        bot.send_message(ADMIN_CHAT_ID, f"Уведомление отправленно {user}", parse_mode='HTML')
+
+        # Добавляем ID отправленного сообщения в таблицу users
+        cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (message.message_id, user))
+        conn.commit()
+
+    cursor.execute (f"SELECT chat_id FROM users WHERE status = ?", ("teacher",) )
+    teachers = cursor.fetchall()
+    for teacher in teachers:
+
+        cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (False, teacher[0]))
+
+
+
     conn.commit()
 
-cursor.execute (f"SELECT chat_id FROM users WHERE status = ?", ("teacher",) )
-teachers = cursor.fetchall()
-for teacher in teachers:      
-   
-    
-    cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (False, teacher[0]))
-    
-
-
-conn.commit()
-
-cursor.close()
-conn.close()
-
+    cursor.close()
+    conn.close()
+except:
+    bot.send_message(ADMIN_CHAT_ID, f"Произошла ошибка")

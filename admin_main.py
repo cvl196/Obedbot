@@ -272,7 +272,8 @@ def create_keyboard_classes():
     classes = cursor.fetchall()
     cursor.close()
     conn.close()
-    print (classes)
+
+
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class${cl[0]}"))
     keyboard.add(telebot.types.InlineKeyboardButton(text="Закрыть", callback_data="close"))
@@ -357,8 +358,7 @@ def show_classes (message):
     
 @admin_bot.message_handler(commands=['add_users'])
 def add_users (message):
-
-    current_directory = XSLX_PATH
+    current_directory = XLSX_PATH
     file_name =  os.path.join(current_directory, 'xlsx', 'pattern.xlsx')
 
     with open (file_name,'rb') as file: 
@@ -407,13 +407,13 @@ def callback_handler(call):
         
         conn = create_connection()
         cursor = conn.cursor()
-        print(chat_id)
+
         
         cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
         last_msg = cursor.fetchone()
         
         if last_msg and last_msg[0]: 
-            print(last_msg)
+
             bot.delete_message(chat_id=chat_id, 
                                message_id = last_msg[0])
         if db_check_id(chat_id=chat_id):
@@ -433,9 +433,10 @@ def callback_handler(call):
         cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
         conn.commit()
         conn.close()
+        checker = db_check_id(chat_id=chat_id)
         if user_accept(chat_id, 'pupil'):
 
-            if db_check_id(chat_id=chat_id):
+            if checker:
                 admin_bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
@@ -553,7 +554,7 @@ def callback_handler(call):
         cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
         last_msg = cursor.fetchone()
         if last_msg and last_msg[0]: 
-              print(last_msg)
+
               bot.delete_message(chat_id=chat_id, 
                                  message_id = last_msg[0])
             
@@ -669,9 +670,9 @@ def callback_handler(call):
                                      reply_markup=create_keyboard_close())
         
     elif call.data.startswith('class$'): 
-        print(call.data)
+
         cl_name = call.data.split('$')[1]
-        print(cl_name)
+
         conn = create_connection()
         cursor = conn.cursor()
         cursor.execute(f"""SELECT people FROM classes WHERE class = ?""", (cl_name,))
@@ -727,7 +728,7 @@ def delete_class(class_name):
 
 
 def add_users_ex(message):
-    print('helo')
+
     file_extension = os.path.splitext(message.document.file_name)[1].lower()
     if message.document.file_id and file_extension == '.xlsx': 
         file_info = admin_bot.get_file(message.document.file_id)

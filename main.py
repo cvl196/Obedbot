@@ -213,14 +213,12 @@ def db_get_lunch_info_teacher(table_name, clas):
 
             cursor.execute("SELECT chat_id FROM users WHERE grade = ? AND status = ?", (clas,'pupil'))
             people_in_class = len(cursor.fetchall())
-            print('_____')
-            print(cursor.fetchall())
-            print('______')
+
 
             cursor.execute(f"SELECT users.chat_id, users.privil, {table_name}.will_eat FROM users INNER JOIN {table_name} ON users.chat_id = {table_name}.chat_id WHERE grade = ?", (clas,))
             people = cursor.fetchall() 
             voted_people = len(people) ### 2 - льготник 3 - обеды
-            print(people)
+
 
             eat_no = 0
             eat_yes = 0
@@ -262,6 +260,33 @@ def db_get_lunch_info_teacher(table_name, clas):
         finally:
             conn.close()
     return "Ошибка подключения к базе данных"
+
+def db_check_username_reg(username):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_name FROM users WHERE user_name = ?', (username,))
+    info = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    if info is None:
+        return True
+    else: 
+        return False 
+    
+
+
+def db_check_phone_reg(phone):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT phone FROM users WHERE phone = ?', (phone,))
+    info = cursor.fetchone()
+    
+    if info is None:    
+        return True
+    else:     
+        return False 
+
 
 def create_table(date):
     conn = create_connection()
@@ -369,10 +394,10 @@ def notify_teacher(table_name, date, chat_id, conn, cursor):
     clas = name_record [2]
     cursor.execute(f"SELECT chat_id FROM {table_name}")
     voted_people = len(cursor.fetchall())
-    cursor.execute(f"SELECT people FROM classes WHERE class = ?", (clas,))
-    people = cursor.fetchone()[0]
+    cursor.execute(f"SELECT chat_id FROM users WHERE grade = ? AND status = ?", (clas, 'pupil'))
+    people = cursor.fetchone()
     
-    if people == voted_people: 
+    if len(people) == voted_people: 
         cursor.execute (f"SELECT chat_id, send_teacher FROM users WHERE grade = ? and status = ?", (clas,"teacher") )
         teachers = cursor.fetchall()
         for teacher in teachers:
@@ -956,7 +981,7 @@ def create_keyboard_classes_report():
     classes = cursor.fetchall()
     cursor.close()
     conn.close()
-    print (classes)
+
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_report${cl[0]}"))
     keyboard.add(telebot.types.InlineKeyboardButton(text=f"Назад", callback_data=f"back"))
@@ -971,7 +996,7 @@ def create_keyboard_classes_reg():
     classes = cursor.fetchall()
     cursor.close()
     conn.close()
-    print (classes)
+
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_reg${cl[0]}"))
     
@@ -986,7 +1011,7 @@ def create_keyboard_classes_edit():
     classes = cursor.fetchall()
     cursor.close()
     conn.close()
-    print (classes)
+
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_edit${cl[0]}"))
     
@@ -1001,7 +1026,7 @@ def create_keyboard_classes_lunch():
     classes = cursor.fetchall()
     cursor.close()
     conn.close()
-    print (classes)
+
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_lunch${cl[0]}"))
     
@@ -1063,7 +1088,7 @@ def start(message):
         conn.commit()
         cursor.close()
         conn.close()
-        print(chat_id, user_name)
+
 
 
         last_msg = get_user_info(message.chat.id)  # Получаем информацию о пользователе
@@ -1625,17 +1650,23 @@ def callback_handler(call):
 ###регистрация
 def get_name(message):
     name = message.text
-    print(name)
+    
     add_user_waitlist(message.chat.id, 'chat_id', message.chat.id)
     add_user_waitlist(name, 'first_name', message.chat.id)
-    if message.chat.username is not None:
+    if message.chat.username is not None:        
         username = f"@{message.chat.username}"
-        add_user_waitlist(username, 'user_name', message.chat.id)
-        bot.send_message(
-            message.chat.id,  
-            'Введите вашу фамилию', 
-        )
-        bot.register_next_step_handler(message, get_last_name)        
+        if not db_check_username_reg(username):
+            add_user_waitlist(username, 'user_name', message.chat.id)
+            bot.send_message(
+                message.chat.id,  
+                'Введите вашу фамилию', 
+            )
+            bot.register_next_step_handler(message, get_last_name) 
+        else: 
+             bot.send_message(
+                message.chat.id,  
+                'Пользователь с вашим username уже числится в базе данных, обратитесь к администратору', 
+            )      
     else:
         bot.send_message(
             chat_id = message.chat.id,
@@ -1645,7 +1676,7 @@ def get_name(message):
    
 def get_last_name(message):
     last_name = message.text
-    print(last_name)
+
     add_user_waitlist(last_name, 'last_name', message.chat.id)
     bot.send_message(
         message.chat.id, 
@@ -1654,39 +1685,49 @@ def get_last_name(message):
     )   
 
 def get_priv(message):
-    priv = 0
-    if message.text == 'Да':
-        priv = 1 
-    elif message.text == 'Нет':
-        priv == 0
-    add_user_waitlist(priv,'privil', message.chat.id)
+    if message.text != 'Да' and message.text != 'Нет':
+        bot.send_message(
+                chat_id=message.chat.id,
+                text='Вы являетесь льготником? Нажмите кнопку ниже',
+                reply_markup=create_keyboard_priv()
+            )
+        bot.register_next_step_handler(message, get_priv)
+    else:        
+        priv = 0
+        if message.text == 'Да':
+            priv = 1 
+        elif message.text == 'Нет':
+            priv == 0
+        add_user_waitlist(priv,'privil', message.chat.id)
 
-
-    remove_keyboard = telebot.types.ReplyKeyboardRemove()
-    temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
-    bot.delete_message(message.chat.id, temp_msg.message_id)  
-    
-    bot.send_message(
-        message.chat.id, 
-        'Нажмите кнопку ниже чтобы указать свой номер телефона', 
-        reply_markup=create_keyboard_phone()
-    )
-    bot.register_next_step_handler(message, get_phone)
-
-def get_phone(message):
-    if message.contact:       
-
-        phone = message.contact.phone_number
-
-        add_user_waitlist(phone, 'phone', message.chat.id) 
 
         remove_keyboard = telebot.types.ReplyKeyboardRemove()
         temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
+        bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
         winfo = get_waitlist_info(message.chat.id)    
-        print(winfo)
+
         bot.send_message(
-            message.chat.id,
-            f"""Проверьте введенные даныные и нажмите кнопку 'Подтвердить', если все верно.
+            message.chat.id, 
+            'Нажмите кнопку ниже чтобы указать свой номер телефона', 
+            reply_markup=create_keyboard_phone()
+        )
+        bot.register_next_step_handler(message, get_phone)
+
+def get_phone(message):
+    if message.contact:     
+        phone = message.contact.phone_number
+        print(phone)
+        if db_check_phone_reg(phone): 
+            add_user_waitlist(phone, 'phone', message.chat.id) 
+
+            remove_keyboard = telebot.types.ReplyKeyboardRemove()
+            temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
+            bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+            winfo = get_waitlist_info(message.chat.id)    
+
+            bot.send_message(
+                message.chat.id,
+                f"""Проверьте введенные даныные и нажмите кнопку 'Подтвердить', если все верно.
 Ваши данные:
 Имя: {winfo[1]}
 Фамилия: {winfo[2]}
@@ -1694,10 +1735,15 @@ def get_phone(message):
 Телефон: {winfo[4]}
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }
-            """, 
-            reply_markup=create_keyboard_reg_check(db_check_id(message.chat.id))
-        )
+                """, 
+                reply_markup=create_keyboard_reg_check(db_check_id(message.chat.id))
+            )
+        else: 
+            bot.send_message(message.chat.id, "Пользователь с данным номером уже зарегистрирован, обратитесь к администратору")
     else: 
+        remove_keyboard = telebot.types.ReplyKeyboardRemove()
+        temp_msg = bot.send_message(message.chat.id, "Неверный номер", reply_markup=remove_keyboard)
+        bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
         bot.send_message(
         message.chat.id, 
         'Неверно отправлен контакт! \nНажмите кнопку ниже чтобы указать свой номер телефона', 
@@ -1731,7 +1777,7 @@ def get_report(message, grade):
                          text=f"Ошибка, проверьте верность промежутка, и попробуйте заново",
                          reply_markup=create_keyboard_back())
 
-###изменение данных 
+
 
 
 
