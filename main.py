@@ -274,8 +274,6 @@ def db_check_username_reg(username):
     else: 
         return False 
     
-
-
 def db_check_phone_reg(phone):
     conn = create_connection()
     cursor = conn.cursor()
@@ -286,7 +284,6 @@ def db_check_phone_reg(phone):
         return True
     else:     
         return False 
-
 
 def create_table(date):
     conn = create_connection()
@@ -380,7 +377,7 @@ def add_lunch_record(table_name, chat_id, will_eat, date, send = 0, will_attend=
 
 
             conn.commit()
-            if send: notify_teacher(table_name=table_name,date=date, chat_id = chat_id, conn = conn, cursor = cursor )
+            notify_teacher(table_name=table_name,date=date, chat_id = chat_id, conn = conn, cursor = cursor )
 
         except Error as e:
             print(f"Ошибка при добавлении записи: {e}")
@@ -395,8 +392,9 @@ def notify_teacher(table_name, date, chat_id, conn, cursor):
     cursor.execute(f"SELECT chat_id FROM {table_name}")
     voted_people = len(cursor.fetchall())
     cursor.execute(f"SELECT chat_id FROM users WHERE grade = ? AND status = ?", (clas, 'pupil'))
-    people = cursor.fetchone()
-    
+    people = cursor.fetchall()
+    print(len(people))
+    print(voted_people)
     if len(people) == voted_people: 
         cursor.execute (f"SELECT chat_id, send_teacher FROM users WHERE grade = ? and status = ?", (clas,"teacher") )
         teachers = cursor.fetchall()
@@ -406,8 +404,11 @@ def notify_teacher(table_name, date, chat_id, conn, cursor):
                 cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?",(teacher[0],))
                 last_msg = cursor.fetchone()[0]
                 if last_msg: 
-                    bot.delete_message(chat_id = teacher[0], 
+                    try:
+                        bot.delete_message(chat_id = teacher[0], 
                                         message_id = last_msg)
+                    except: 
+                        pass
                 tmp_msg = bot.send_message(
                     chat_id=teacher[0],                        
                     text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
@@ -784,9 +785,6 @@ def get_excel_users_admin(chat_id):
     cursor = conn.cursor()
     
     cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil, status FROM users ORDER BY status DESC, grade ASC, last_name ASC")
-
-    
-
     people = cursor.fetchall()
 
     processed_people = []
@@ -802,32 +800,31 @@ def get_excel_users_admin(chat_id):
         elif status == 'teacher':
             status = 'Учитель'
         
-
-        # Добавляем обработанную запись в новый список
         processed_people.append((first_name, last_name, grade, phone, user_name, privil, status))
     
-    people = processed_people
-    people_df = pd.DataFrame(data = people,
-                            
-                            columns = ['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк', 'Роль' ] 
-                             )
+    people_df = pd.DataFrame(data=processed_people,
+                            columns=['Имя', 'Фамилия', 'Класс', 'Телефон', 'Имя пользователя телеграмм', 'Льготнк', 'Роль'])
     
-    current_directory = XLSX_PATH
+    # Создаем директорию xlsx, если она не существует
+    xlsx_dir = os.path.join(XLSX_PATH, 'xlsx')
+    if not os.path.exists(xlsx_dir):
+        os.makedirs(xlsx_dir)
+
     file_name = f'users_{chat_id}.xlsx'
-    output_file = os.path.join(current_directory, 'xlsx', file_name)
-    people_df.to_excel(output_file, index= False, sheet_name='people')
+    output_file = os.path.join(xlsx_dir, file_name)
+    people_df.to_excel(output_file, index=False, sheet_name='people')
 
     cursor.close()
     conn.close()
     
-    #Формат
+    # Форматирование
     workbook = load_workbook(output_file)
     sheet = workbook.active
 
     thin_border = Border(left=Side(style='thin'), 
-                         right=Side(style='thin'), 
-                         top=Side(style='thin'), 
-                         bottom=Side(style='thin'))  # Определяем стиль границы
+                        right=Side(style='thin'), 
+                        top=Side(style='thin'), 
+                        bottom=Side(style='thin'))
 
     for i, column in enumerate(sheet.columns):
         max_length = 0
@@ -836,17 +833,12 @@ def get_excel_users_admin(chat_id):
             try:
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-                cell.alignment = Alignment(horizontal='center')  # Выравнивание по центру
-                cell.border = thin_border  # Применяем границы к ячейке
+                cell.alignment = Alignment(horizontal='center')
+                cell.border = thin_border
             except:
                 pass
         
-        # Устанавливаем отступы для первого столбца и остальных
-        
-        adjusted_width = (max_length + 4)  # Отступ +4 для первого столбца
-        
-            
-        
+        adjusted_width = (max_length + 4)
         sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
 
     workbook.save(output_file)
@@ -1056,14 +1048,13 @@ def start(message):
     
     # Проверяем, есть ли пользователь в базе данных
     if db_check_id(message.chat.id):
-        last_msg = get_user_info(message.chat.id)  # Получаем информацию о пользователе
+        last_msg = get_user_info(message.chat.id)
         
-        
-        # Удаляем предыдущее сообщение, если оно существует
-        if last_msg[9]:  # Предполагаем, что last_msg находится в 6-й колонке
-            bot.delete_message(chat_id=message.chat.id, message_id=last_msg[9])  # Удаляем предыдущее сообщение
-        
-        
+        if last_msg[9]:
+            try:
+                bot.delete_message(chat_id=message.chat.id, message_id=last_msg[9])
+            except:
+                pass
         
         if db_check_status_pupil(message.chat.id):
             msg = bot.send_message(
@@ -1089,16 +1080,13 @@ def start(message):
         cursor.close()
         conn.close()
 
-
-
-        last_msg = get_user_info(message.chat.id)  # Получаем информацию о пользователе
+        last_msg = get_user_info(message.chat.id)
         
-        
-        # Удаляем предыдущее сообщение, если оно существует
-        if last_msg is not None and len(last_msg) > 9 and last_msg[9] is not None:  # Предполагаем, что last_msg находится в 6-й колонке
-            bot.delete_message(chat_id=message.chat.id, message_id=last_msg[9])  # Удаляем предыдущее сообщение
-        
-        
+        if last_msg[9]:
+            try:
+                bot.delete_message(chat_id=message.chat.id, message_id=last_msg[9])
+            except:
+                pass
         
         if db_check_status_pupil(message.chat.id):
             msg = bot.send_message(
@@ -1538,6 +1526,7 @@ def callback_handler(call):
                 table_name = table_name,
                 chat_id = call.message.chat.id,
                 will_eat = False,
+                send = 1,
                 date = date,
                 will_attend=None,
                 reason = None
@@ -1703,7 +1692,10 @@ def get_priv(message):
 
         remove_keyboard = telebot.types.ReplyKeyboardRemove()
         temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
-        bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+        try:
+            bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+        except:
+            pass
         winfo = get_waitlist_info(message.chat.id)    
 
         bot.send_message(
@@ -1716,13 +1708,29 @@ def get_priv(message):
 def get_phone(message):
     if message.contact:     
         phone = message.contact.phone_number
+        chat_id = message.chat.id
         print(phone)
-        if db_check_phone_reg(phone): 
+        print('phone', db_check_phone_reg(phone))
+        db_check = db_check_id(chat_id)
+        print(db_check)
+
+        if phone.startswith('+7'):
+            if len(phone) == 12:
+                phone = phone
+        elif  phone.startswith('7'):
+            if len(phone) == 11:
+                phone = f"+{phone}"
+        print(phone)
+
+        if db_check_phone_reg(phone) or db_check: 
             add_user_waitlist(phone, 'phone', message.chat.id) 
 
             remove_keyboard = telebot.types.ReplyKeyboardRemove()
             temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
-            bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+            try:
+                bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+            except:
+                pass
             winfo = get_waitlist_info(message.chat.id)    
 
             bot.send_message(
@@ -1739,11 +1747,20 @@ def get_phone(message):
                 reply_markup=create_keyboard_reg_check(db_check_id(message.chat.id))
             )
         else: 
+            remove_keyboard = telebot.types.ReplyKeyboardRemove()
+            temp_msg = bot.send_message(message.chat.id, "Неверный номер", reply_markup=remove_keyboard)
+            try:
+                bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+            except Error as e:
+                print(e)
             bot.send_message(message.chat.id, "Пользователь с данным номером уже зарегистрирован, обратитесь к администратору")
     else: 
         remove_keyboard = telebot.types.ReplyKeyboardRemove()
         temp_msg = bot.send_message(message.chat.id, "Неверный номер", reply_markup=remove_keyboard)
-        bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+        try:
+            bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
+        except:
+            pass
         bot.send_message(
         message.chat.id, 
         'Неверно отправлен контакт! \nНажмите кнопку ниже чтобы указать свой номер телефона', 
