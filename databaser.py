@@ -349,6 +349,31 @@ def delete_user(chat_id):
         cursor.close()
         conn.close()
 
+def delete_user_by_name(name):
+    """Удаляет пользователя из таблицы users по имени."""
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Удаляем пользователя из таблицы users по имени
+        cursor.execute("DELETE FROM users WHERE first_name = ?", (name,))
+        
+        # Проверяем количество удаленных строк
+        if cursor.rowcount == 0:
+            print(f"Пользователь с именем {name} не найден.")
+        else:
+            print(f"Пользователь с именем {name} был удален.")
+
+        # Сохраняем изменения
+        conn.commit()
+
+    except sqlite3.Error as e:
+        print(f"Произошла ошибка: {e}")
+    finally:
+        # Закрываем соединение
+        cursor.close()
+        conn.close()
+
 def generate_attendance_report(start_date_str, end_date_str):
     # Преобразуем строки в формат Timestamp
     start_date = pd.to_datetime(start_date_str, format="%d.%m.%Y")
@@ -518,6 +543,3 @@ def oneuse():
     cursor.close()
     conn.close()
 
-
-
-clean_table('users_waitlist')

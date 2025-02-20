@@ -44,7 +44,7 @@ def init_db():
     
     
     if not os.path.exists(DB_PATH):
-        # Создаем пустую базу данных
+        
         open(DB_PATH, 'a').close()
         print("База данных создана")
 
@@ -52,7 +52,7 @@ def init_db():
     if conn:
         try:
             cursor = conn.cursor()
-            # Проверяем наличие таблицы users
+            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY,
@@ -70,14 +70,14 @@ def init_db():
                     
                 )
             ''')
-            # Проверяем наличие таблицы classes
+            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS classes (
                     class TEXT PRIMARY KEY,
                     people INTEGER
                 )
             ''')
-            # Проверяем наличие таблицы users_waitlist
+            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users_waitlist (
                     chat_id INTEGER PRIMARY KEY,
@@ -91,7 +91,7 @@ def init_db():
                     send_req BOOLEAN
                 )
             ''')
-            # Проверяем наличие таблицы blocked_users
+            
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS blocked_users (
                     chat_id INTEGER PRIMARY KEY,
@@ -202,18 +202,37 @@ def db_get_lunch_info_teacher(table_name, clas):
     if conn is not None:
         try:
             cursor = conn.cursor()
-            cursor.execute(f"SELECT name, will_eat FROM {table_name}")
+            cursor.execute(f"SELECT name, will_eat, chat_id FROM {table_name} ORDER BY name ASC ")
             results = cursor.fetchall()
-            
+            voted_people_chat_id = []
             formatted_results = []
-            for name, will_eat in results:
+            for name, will_eat, chat_id in results:
+                voted_people_chat_id.append(chat_id)
                 status = "✅" if will_eat else "❌"
                 formatted_results.append(f"{name} - {status}")
             
 
-            cursor.execute("SELECT chat_id FROM users WHERE grade = ? AND status = ?", (clas,'pupil'))
-            people_in_class = len(cursor.fetchall())
+            cursor.execute("SELECT chat_id FROM users WHERE grade = ? AND status = ? ", (clas,'pupil'))
+            all_people = cursor.fetchall()  # Сохраняем результат в переменную
+            people_in_class = len(all_people)  # Используем сохраненный результат
+            
+            unvoted_people = []
+            unvoted_names = []
+            for person_unvoted in all_people:  # Используем сохраненный результат
+                if person_unvoted[0] not in voted_people_chat_id:
+                    unvoted_people.append(person_unvoted[0])  # Берем только chat_id из кортежа
 
+            for unvoted_person in unvoted_people: 
+                cursor.execute('SELECT first_name,last_name FROM users where chat_id =?',(unvoted_person,))
+                name_tuple = cursor.fetchone()
+                if name_tuple:
+                    unvoted_names.append((name_tuple[1], name_tuple[0]))  # Сохраняем как кортеж (фамилия, имя)
+            
+            # Сортируем список по фамилии
+            unvoted_names.sort()  # Сортировка по первому элементу кортежа (фамилии)
+            
+            # Преобразуем отсортированные кортежи в строки
+            unvoted_names = [f"{last_name} {first_name}" for last_name, first_name in unvoted_names]
 
             cursor.execute(f"SELECT users.chat_id, users.privil, {table_name}.will_eat FROM users INNER JOIN {table_name} ON users.chat_id = {table_name}.chat_id WHERE grade = ?", (clas,))
             people = cursor.fetchall() 
@@ -243,8 +262,11 @@ def db_get_lunch_info_teacher(table_name, clas):
 
             info = info + "\n".join(formatted_results) 
 
-            
+            info = info + "----------------------------------------------\n"
 
+            info = info + "Не проголосовали:\n"
+
+            info = info + "\n".join(unvoted_names) 
 
             return info 
             
@@ -330,7 +352,7 @@ def add_lunch_record(table_name, chat_id, will_eat, date, send = 0, will_attend=
     cursor = conn.cursor()
     cursor.execute("SELECT first_name, last_name, grade FROM users WHERE chat_id = ?", (chat_id,))
     name_record = cursor.fetchone()
-    name = f"{name_record[0]} {name_record[1]}" 
+    name = f"{name_record[1]} {name_record[0]}" 
     
     
     cursor.close()
@@ -392,32 +414,62 @@ def notify_teacher(table_name, date, chat_id, conn, cursor):
     cursor.execute(f"SELECT chat_id FROM {table_name}")
     voted_people = len(cursor.fetchall())
     cursor.execute(f"SELECT chat_id FROM users WHERE grade = ? AND status = ?", (clas, 'pupil'))
-    people = cursor.fetchall()
-    print(len(people))
-    print(voted_people)
-    if len(people) == voted_people: 
-        cursor.execute (f"SELECT chat_id, send_teacher FROM users WHERE grade = ? and status = ?", (clas,"teacher") )
-        teachers = cursor.fetchall()
-        for teacher in teachers:
-            if teacher[1]!=1: 
-                lunch_info = db_get_lunch_info_teacher(table_name=table_name, clas=clas)
-                cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?",(teacher[0],))
-                last_msg = cursor.fetchone()[0]
-                if last_msg: 
-                    try:
-                        bot.delete_message(chat_id = teacher[0], 
-                                        message_id = last_msg)
-                    except: 
-                        pass
-                tmp_msg = bot.send_message(
-                    chat_id=teacher[0],                        
-                    text=f"<b><u>Обеды {date}</u></b>\n{lunch_info}",
-                    reply_markup=create_keyboard_back(),
-                    parse_mode='HTML'
-                )
-                
-                cursor.execute("UPDATE users SET send_teacher = ?, last_msg = ? WHERE chat_id = ?", (True, tmp_msg.message_id, teacher[0]))
-    conn.commit()
+    all_people = cursor.fetchall()  # Сохраняем результат в переменную
+    people_in_class = len(all_people)  # Используем сохраненный результат
+    
+    unvoted_people = []
+    unvoted_names = []
+    for person_unvoted in all_people:  # Используем сохраненный результат
+        if person_unvoted[0] not in voted_people_chat_id:
+            unvoted_people.append(person_unvoted[0])  # Берем только chat_id из кортежа
+
+    for unvoted_person in unvoted_people: 
+        cursor.execute('SELECT first_name,last_name FROM users where chat_id =?',(unvoted_person,))
+        name_tuple = cursor.fetchone()
+        if name_tuple:
+            unvoted_names.append((name_tuple[1], name_tuple[0]))  # Сохраняем как кортеж (фамилия, имя)
+            
+    # Сортируем список по фамилии
+    unvoted_names.sort()  # Сортировка по первому элементу кортежа (фамилии)
+    
+    # Преобразуем отсортированные кортежи в строки
+    unvoted_names = [f"{last_name} {first_name}" for last_name, first_name in unvoted_names]
+
+    cursor.execute(f"SELECT users.chat_id, users.privil, {table_name}.will_eat FROM users INNER JOIN {table_name} ON users.chat_id = {table_name}.chat_id WHERE grade = ?", (clas,))
+    people = cursor.fetchall() 
+    voted_people = len(people) ### 2 - льготник 3 - обеды
+
+
+    eat_no = 0
+    eat_yes = 0
+    eat_priv = 0
+    
+    for person in people: 
+        if person[2] == 1: 
+            if person[1] == 1: 
+                eat_priv += 1
+            elif person[1] == 0: 
+                eat_yes +=1
+        else: 
+            eat_no +=1 
+    
+    info = ""
+
+    info = info + f"{eat_yes} обедают\n{eat_priv} обедают как льготники \n{eat_no} не обедают" if formatted_results else "Нет данных"
+    
+    info = info + f"\nПроголосовало {voted_people} из {people_in_class}\n"
+    
+    info = info + "----------------------------------------------\n"
+
+    info = info + "\n".join(formatted_results) 
+
+    info = info + "----------------------------------------------\n"
+
+    info = info + "Не проголосовали:\n"
+
+    info = info + "\n".join(unvoted_names) 
+
+    return info 
 
 def get_lunch_info(chat_id, today=False):
     
@@ -582,71 +634,69 @@ def get_user_info(chat_id):
     return user_info
 
 def generate_attendance_report(start_date_str, end_date_str, grade, chat_id):
-    # Преобразуем строки в формат Timestamp
+    
     start_date = pd.to_datetime(start_date_str, format="%d.%m.%Y")
     end_date = pd.to_datetime(end_date_str, format="%d.%m.%Y")
 
-    # Подключение к базе данных
+    
     conn = create_connection()
     cursor = conn.cursor()
 
-    # Получаем список всех таблиц в базе данных
+    
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
     tables = cursor.fetchall()
 
-    # Список для хранения всех записей
+    
     records = []
 
-    # Получаем список пользователей
     cursor.execute("SELECT first_name, last_name, chat_id FROM users WHERE grade = ? AND status = ?", (grade,'pupil'))
     
     users_id = []
-    users = [{'name': f"{row[1]} {row[0]}", 'chat_id': row[2]} for row in cursor.fetchall()]  # Объединяем фамилию и имя
-    users.sort(key=lambda x: x['name'])  # Сортируем по алфавиту по полному имени
+    users = [{'name': f"{row[1]} {row[0]}", 'chat_id': row[2]} for row in cursor.fetchall()]  
+    users.sort(key=lambda x: x['name'])  
     
     for user in users: 
         users_id.append(user['chat_id'])
     
-    # Даты для заголовка
-    
+  
     dates = []    
     records = {}
-    # Проходим по всем таблицам и извлекаем данные
+    
     for table in tables:
         attendance_dict = {}
         table_name = table[0]
         
         if table_name.startswith("lunch_"):
             try:
-                date_str = table_name[6:].replace('_', '.')  # Извлекаем дату из имени таблицы
-                date = pd.to_datetime(date_str, format="%d.%m.%Y")  # Преобразуем строку в дату
+                date_str = table_name[6:].replace('_', '.') 
+                date = pd.to_datetime(date_str, format="%d.%m.%Y") 
 
                 if start_date <= date <= end_date:
-                    dates.append(date.strftime("%d.%m.%Y"))  # Добавляем дату в формате "дд.мм.гггг"
-                    cursor.execute(f"SELECT chat_id, will_attend, reason FROM {table_name}")  # Изменено: выбираем chat_id
+                    dates.append(date.strftime("%d.%m.%Y"))  
+                    cursor.execute(f"SELECT chat_id, will_attend, reason FROM {table_name}") 
                     attendance_data = cursor.fetchall()
 
-                    # Создаем словарь для хранения информации о посещении
+                    
                     for row in attendance_data: 
-                        if row[0] in users_id:  # Изменено: проверяем chat_id
-                            user_name = next(user['name'] for user in users if user['chat_id'] == row[0])  # Получаем имя пользователя
-                            attendance_dict[user_name] = (row[1], row[2])  # Изменено: используем имя пользователя
+                        if row[0] in users_id:  
+                            user_name = next(user['name'] for user in users if user['chat_id'] == row[0])  
+                            attendance_dict[user_name] = (row[1], row[2]) 
                             
             except ValueError:
-                continue  # Игнорируем таблицы, которые не являются датами
+                continue 
             finally:
                 records[date.strftime("%d.%m.%Y")] = attendance_dict
         
-    # Закрытие соединения с базой данных
+   
     conn.close()
     print(records) 
-    # Создание DataFrame для отчета
+  
     users_names = [user['name'] for user in users]
     report_df = pd.DataFrame(index=users_names)
     
-    # Заполняем DataFrame данными о посещении
+    
     for date in dates:
-        report_df[date] = ''  # Инициализируем столбец пустыми значениями
+        report_df[date] = ''  
         for key,info in records[date].items():
             will_attend = records[date][key][0]
             reason = records[date][key][1]
@@ -655,24 +705,23 @@ def generate_attendance_report(start_date_str, end_date_str, grade, chat_id):
             elif will_attend == 0:
                 report_df.at[key, date] = '-'                    
                 if reason == 'doc':
-                    report_df.at[key, date] = 'З'  # Заявление по болезни
+                    report_df.at[key, date] = 'З'  
                 elif reason == 'ill':
-                    report_df.at[key, date] = 'Б'  # Заявление по болезни
-    # Сохранение в Excel файл
+                    report_df.at[key, date] = 'Б'  
+    
     file_name = f'report_{chat_id}.xlsx'
     current_directory = XLSX_PATH
     output_file = os.path.join(current_directory, 'xlsx', file_name)
     report_df.to_excel(output_file, index=True, sheet_name='Attendance Report')
 
-    # Форматирование ширины столбцов, выравнивание ячеек и границы
+    
     workbook = load_workbook(output_file)
     sheet = workbook.active
 
     thin_border = Border(left=Side(style='thin'), 
                          right=Side(style='thin'), 
                          top=Side(style='thin'), 
-                         bottom=Side(style='thin'))  # Определяем стиль границы
-
+                         bottom=Side(style='thin'))
     for i, column in enumerate(sheet.columns):
         max_length = 0
         column = [cell for cell in column]
@@ -680,20 +729,20 @@ def generate_attendance_report(start_date_str, end_date_str, grade, chat_id):
             try:
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-                cell.alignment = Alignment(horizontal='center')  # Выравнивание по центру
-                cell.border = thin_border  # Применяем границы к ячейке
+                cell.alignment = Alignment(horizontal='center')  
+                cell.border = thin_border  
             except:
                 pass
         
-        # Устанавливаем отступы для первого столбца и остальных
+        
         if i == 0:
-            adjusted_width = (max_length + 4)  # Отступ +4 для первого столбца
+            adjusted_width = (max_length + 4)  
         else:
-            adjusted_width = (max_length + 1)  # Отступ +1 для остальных столбцов
+            adjusted_width = (max_length + 1)  
         
         sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
 
-    workbook.save(output_file)  # Сохраняем изменения в файле
+    workbook.save(output_file)  
     return file_name
 
 def add_last_msg(chat_id, last_msg): 
@@ -717,22 +766,22 @@ def get_exel_users(chat_id, clas = None ):
     conn = create_connection()
     cursor = conn.cursor()
     if clas: 
-        cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ?  AND grade = ? ORDER BY grade ASC ", ('pupil',clas))
+        cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ?  AND grade = ? grade ASC, last_name ASC ", ('pupil',clas))
     elif clas == None:
-        cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ? ORDER BY grade ASC ", ('pupil',))
+        cursor.execute("SELECT first_name, last_name, grade, phone, user_name, privil FROM users WHERE status = ? ORDER BY grade ASC, last_name ASC ", ('pupil',))
 
     people = cursor.fetchall()
 
     processed_people = []
     for person in people:
         first_name, last_name, grade, phone, user_name, privil = person
-        # Заменяем privil
+        
         if privil == 0:
             privil = '-'
         elif privil == 1:
             privil = '+'
 
-        # Добавляем обработанную запись в новый список
+        
         processed_people.append((first_name, last_name, grade, phone, user_name, privil))
     people = processed_people
     people_df = pd.DataFrame(data = people,
@@ -755,7 +804,7 @@ def get_exel_users(chat_id, clas = None ):
     thin_border = Border(left=Side(style='thin'), 
                          right=Side(style='thin'), 
                          top=Side(style='thin'), 
-                         bottom=Side(style='thin'))  # Определяем стиль границы
+                         bottom=Side(style='thin'))  
 
     for i, column in enumerate(sheet.columns):
         max_length = 0
@@ -764,14 +813,14 @@ def get_exel_users(chat_id, clas = None ):
             try:
                 if len(str(cell.value)) > max_length:
                     max_length = len(str(cell.value))
-                cell.alignment = Alignment(horizontal='center')  # Выравнивание по центру
-                cell.border = thin_border  # Применяем границы к ячейке
+                cell.alignment = Alignment(horizontal='center')  
+                cell.border = thin_border  
             except:
                 pass
         
-        # Устанавливаем отступы для первого столбца и остальных
         
-        adjusted_width = (max_length + 4)  # Отступ +4 для первого столбца
+        
+        adjusted_width = (max_length + 4)  
         
             
         
@@ -863,6 +912,98 @@ def clean_req_send(chat_id):
     cursor.execute("UPDATE users_waitlist SET send_req =? WHERE chat_id = ?", (False, chat_id))
     conn.commit()
     conn.close()
+
+def generate_daily_report(grade, chat_id, today=0):
+    if today: 
+        tz = pytz.timezone('Asia/Yekaterinburg')
+        tomorrow = datetime.now(tz) 
+        date = tomorrow.strftime("%d_%m_%Y")
+        table = f"lunch_{date}"
+    elif not today:
+        tz = pytz.timezone('Asia/Yekaterinburg')
+        tomorrow = datetime.now(tz) + timedelta(days=1)
+        date = tomorrow.strftime("%d_%m_%Y")
+        table = f"lunch_{date}"
+    conn = create_connection()
+    cursor = conn.cursor()
+   
+    
+    grade = grade[0] if isinstance(grade, tuple) else grade
+    # Получаем общее количество учеников в классе
+    total_people_info = cursor.execute("""
+        SELECT COUNT(*) 
+        FROM users 
+        WHERE grade = ? AND status = 'pupil'
+    """, (grade,)).fetchone()
+    total_people = total_people_info[0] if total_people_info else 0
+
+    valid_reason_people_info = cursor.execute(f"""
+        SELECT t.name 
+        FROM users u
+        INNER JOIN {table} t ON u.chat_id = t.chat_id
+        WHERE u.grade = ? AND t.reason = 'doc'
+    """, (grade,)).fetchall()
+    valid_reason_people = len(valid_reason_people_info)
+    valid_reason_names = [name[0] for name in valid_reason_people_info]
+
+    ill_people_info = cursor.execute(f"""
+        SELECT t.name 
+        FROM users u
+        INNER JOIN {table} t ON u.chat_id = t.chat_id
+        WHERE u.grade = ? AND t.reason = 'ill'
+    """, (grade,)).fetchall()
+    ill_people = len(ill_people_info)
+    ill_people_names = [name[0] for name in ill_people_info]
+    info = ["Класс Количество учащихся (всего)",
+        "Количество отсутсвующих по болезни", 
+        "ФИО обучающихся, отсутствующих по болезни",
+        "Количество отсутствующих по УП",
+        "ФИО обучающихся, отсутствующих по УП"]
+    
+    data = [total_people, 
+            ill_people, 
+            "\n".join([f" {name}" for name in ill_people_names]), # Используем двойной перенос строки
+            valid_reason_people,
+            "\n".join([f" {name}" for name in valid_reason_names])]
+    df = pd.DataFrame([data],  columns=info)
+    
+
+
+    file_name = f'daily_report_{chat_id}.xlsx'
+    current_directory = XLSX_PATH
+    output_file = os.path.join(current_directory, 'xlsx', file_name)
+    df.to_excel(output_file, sheet_name='Attendance Report')
+
+    workbook = load_workbook(output_file)
+    sheet = workbook.active
+
+    thin_border = Border(left=Side(style='thin'), 
+                         right=Side(style='thin'), 
+                         top=Side(style='thin'), 
+                         bottom=Side(style='thin'))
+    for i, column in enumerate(sheet.columns):
+        max_length = 0
+        column = [cell for cell in column]
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+                cell.alignment = Alignment(horizontal='center')  
+                cell.border = thin_border  
+            except:
+                pass
+        
+        
+        if i == 0:
+            adjusted_width = (max_length + 4)  
+        else:
+            adjusted_width = (max_length + 1)  
+        
+        sheet.column_dimensions[get_column_letter(column[0].column)].width = adjusted_width
+
+    workbook.save(output_file)
+
+    return file_name
 
 
 def create_keyboard1():
@@ -958,10 +1099,17 @@ def create_keyboard_main_teacher():
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на завтра", callback_data="get_lunch_info_teacher"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные по обедам на сегодня", callback_data="get_lunch_info_teacher_today"))
-    keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей", callback_data="get_users_exel"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Получить ежедневный отчет", callback_data="get_report_daily"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Дополнительные функции", callback_data="main_add"))
+    return keyboard
+
+def create_keyboard_main_teacher_add():
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей", callback_data="get_users_exel"))    
     keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить информацию о обедах других классов", callback_data="other_classes"))
     keyboard.add(telebot.types.InlineKeyboardButton("Мой профиль", callback_data="profile_user"))
+    keyboard.add(telebot.types.InlineKeyboardButton("В главное меню", callback_data="back"))
     return keyboard
 
 def create_keyboard_classes_report(): 
@@ -976,6 +1124,7 @@ def create_keyboard_classes_report():
 
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_report${cl[0]}"))
+
     keyboard.add(telebot.types.InlineKeyboardButton(text=f"Назад", callback_data=f"back"))
     return keyboard
 
@@ -1046,7 +1195,7 @@ def start(message):
     
     create_table(date)
     
-    # Проверяем, есть ли пользователь в базе данных
+    
     if db_check_id(message.chat.id):
         last_msg = get_user_info(message.chat.id)
         
@@ -1065,7 +1214,7 @@ def start(message):
         elif db_check_status_teacher(message.chat.id):
             msg = bot.send_message(
                 message.chat.id,
-                f"Добрый день, {message.chat.first_name} вы приняты в базу данных как учитель! Выберите действие:",
+                f"Добрый день, {message.chat.first_name}! Выберите действие:",
                 reply_markup=create_keyboard_main_teacher()
             )
     
@@ -1094,12 +1243,7 @@ def start(message):
                 f"Добрый день, {message.chat.first_name}! Выберите действие:",
                 reply_markup=create_keyboard_main()
             )
-        elif db_check_status_teacher(message.chat.id):
-            msg = bot.send_message(
-                message.chat.id,
-                f"Добрый день, {message.chat.first_name} вы приняты в базу данных как учитель! Выберите действие:",
-                reply_markup=create_keyboard_main_teacher()
-            )
+      
 
     else:
         msg = bot.send_message(
@@ -1130,20 +1274,44 @@ def callback_handler(call):
                 bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text=f"Вы заблокированы, обратитесь к администратору",)
-            elif  check_req_send(call.message.chat.id): 
+                    text=f"Вы заблокированы, обратитесь к администратору")
+            elif check_req_send(call.message.chat.id): 
                 bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
-                    text=f"Заявка уже отправленна, ожидайте подтверждения",)
-
+                    text=f"Заявка уже отправленна, ожидайте подтверждения")
+            elif db_check_username(f"@{call.message.chat.username}"):        
+                chat_id = call.message.chat.id
+                user_name = f"@{call.message.chat.username}"
+                
+                conn = create_connection()
+                cursor = conn.cursor()
+                cursor.execute("UPDATE users SET chat_id = ? WHERE user_name = ?", (chat_id, user_name))
+                conn.commit()
+                cursor.close()
+                conn.close()
+        
+                last_msg = get_user_info(call.message.chat.id)
+                
+                if last_msg[9]:
+                    try:
+                        bot.delete_message(chat_id=call.message.chat.id, message_id=last_msg[9])
+                    except:
+                        pass
+                    
+                if db_check_status_pupil(call.message.chat.id):
+                    msg = bot.send_message(
+                        call.message.chat.id,
+                        f"Добрый день, {call.message.chat.first_name}! Выберите действие:",
+                        reply_markup=create_keyboard_main()
+                    )
             elif not check_blocked_user(call.message.chat.id):
                 bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=f"Введите ваше имя")               
           
-                bot.register_next_step_handler(call.message, get_name)  
+                bot.register_next_step_handler(call.message, get_name)
    
         elif call.data == "edit":
             bot.edit_message_text(
@@ -1297,7 +1465,7 @@ def callback_handler(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
+                text=f"Добрый день, {call.message.chat.first_name}! Выберите действие:",
                 reply_markup=create_keyboard_main_teacher()
             )
         
@@ -1425,7 +1593,44 @@ def callback_handler(call):
                 parse_mode='HTML'
             )
             
+        elif call.data == "main_add":
+            msg = bot.send_message(
+                call.message.chat.id,
+                f"Добрый день, {call.message.chat.first_name}! Выберите действие:",
+                reply_markup=create_keyboard_main_teacher_add()
+            )
 
+        elif call.data == "get_report_daily":
+            conn = create_connection()
+            cursor = conn.cursor()
+            info = cursor.execute('SELECT grade FROM users WHERE  chat_id = ? ', (call.message.chat.id,))
+            clas = cursor.fetchone()
+            
+
+            cursor.close()
+            conn.close()
+            try:
+                dates = call.message.text.split('-')
+                file_name = generate_daily_report(clas, call.message.chat.id, 1 )
+                current_directory = XLSX_PATH
+                output_file = os.path.join(current_directory, 'xlsx', file_name)
+
+                with open(output_file, 'rb') as file:
+                    bot.send_document(
+                        chat_id=call.message.chat.id,
+                        document=file
+                    )
+
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+
+                bot.send_message(chat_id=call.message.chat.id,
+                                 text=f"Добрый день, {call.message.chat.first_name}, вы числитесь в базе данных как учитель! Выберите действие:",
+                                 reply_markup=create_keyboard_main_teacher())
+            except: 
+                bot.send_message(chat_id=call.message.chat.id,
+                                 text=f"Ошибка, проверьте верность промежутка, и попробуйте заново",
+                                 reply_markup=create_keyboard_back())
 
     elif db_check_id(call.message.chat.id) and db_check_status_pupil(call.message.chat.id):
         
@@ -1729,8 +1934,8 @@ def get_phone(message):
             temp_msg = bot.send_message(message.chat.id, "Данные успешно сохранены!", reply_markup=remove_keyboard)
             try:
                 bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
-            except:
-                pass
+            except Error as e:
+                print(e)
             winfo = get_waitlist_info(message.chat.id)    
 
             bot.send_message(
@@ -1744,8 +1949,7 @@ def get_phone(message):
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }
                 """, 
-                reply_markup=create_keyboard_reg_check(db_check_id(message.chat.id))
-            )
+                reply_markup=create_keyboard_reg_check(db_check_id(message.chat.id)))
         else: 
             remove_keyboard = telebot.types.ReplyKeyboardRemove()
             temp_msg = bot.send_message(message.chat.id, "Неверный номер", reply_markup=remove_keyboard)
@@ -1756,7 +1960,7 @@ def get_phone(message):
             bot.send_message(message.chat.id, "Пользователь с данным номером уже зарегистрирован, обратитесь к администратору")
     else: 
         remove_keyboard = telebot.types.ReplyKeyboardRemove()
-        temp_msg = bot.send_message(message.chat.id, "Неверный номер", reply_markup=remove_keyboard)
+        temp_msg = bot.send_message(message.chat.id, "Неверно отправлен контакт! \nНажмите кнопку ниже чтобы указать свой номер телефона", reply_markup=remove_keyboard)
         try:
             bot.delete_message(chat_id=message.chat.id, message_id=temp_msg.message_id)
         except:
@@ -1793,7 +1997,6 @@ def get_report(message, grade):
         bot.send_message(chat_id=message.chat.id,
                          text=f"Ошибка, проверьте верность промежутка, и попробуйте заново",
                          reply_markup=create_keyboard_back())
-
 
 
 

@@ -186,29 +186,30 @@ def unblocking_user(message):
     admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"Пользователь {info} разблокирован")
 
 def users_accept(file):
-    # Подключение к базе данных
+    
     conn = create_connection()
     cursor = conn.cursor()
     varn = 0
-    # Чтение данных из Excel файла
+    
     df = pd.read_excel(file)
     users = df.values.tolist()
     counter = 0
-    # Проход по каждому пользователю из загруженного файла
+    
     for user in users:
+        us_check = 0
         added_people = []
         if len(user) != 6:
             varn = 1
-            continue  # Пропускаем пользователей с некорректным количеством данных
+            continue  
 
         first_name = user[0]
         last_name = user[1]
         grade = user[2]
         phone = user[3]
         username = user[4]
-        privil = 1 if user[5] == '+' else 0  # Привилегии
+        privil = 1 if user[5] == '+' else 0  
 
-        # Проверяем, существует ли пользователь с таким username
+        
         cursor.execute("SELECT COUNT(*) FROM users WHERE user_name = ?", (username,))
         exists = cursor.fetchone()[0]
 
@@ -216,7 +217,10 @@ def users_accept(file):
         if cursor.fetchone() is None:
             exists = 1
         
-        if exists == 0:  # Если пользователя нет, добавляем его
+        if username is not None: 
+            us_check = 1 
+
+        if exists == 0 and us_check != 0:  
             cursor.execute(
                         "INSERT INTO users (first_name, last_name, grade, phone, status, user_name, privil) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (first_name, last_name, grade, phone, 'pupil', username, privil))
@@ -230,7 +234,7 @@ def users_accept(file):
     conn.close()
     text = ''
     if varn: 
-        text += 'Один или несколько пользователей не добавленны\n'
+        text += 'Несколько пользователей не добавленны\n'
     text += f'Человек добавлено: {counter}\n'
     text += f'Успешно добавленны:\n'
     for person in added_people: 
@@ -513,10 +517,16 @@ def callback_handler(call):
 Имя пользователя: {winfo[6]}
 Льготник: {'Да' if winfo[7] else 'Нет' }"""
         )
+        if db_check_id(call.message.chat.id):
+            text = "Ваш запрос на изменение данных отклонен, перепроверьте данные и отправьте запрос еще раз."
+            keyboard_1 = None
+        else:
+            text = "Ваш запрос на регистрацию отклонен, перепроверьте данные и отправьте запрос еще раз."
+            keyboard_1 = create_keyboard_reg1()
         bot.send_message(
             chat_id=chat_id,
-            text="Ваш запрос на регистрацию отклонен, перепроверьте данные и отправьте запрос еще раз.",
-            reply_markup=create_keyboard_reg1()
+            text= text,
+            reply_markup= keyboard_1
         )
         clean_req_send(chat_id)
     
@@ -673,23 +683,23 @@ def callback_handler(call):
 
         cl_name = call.data.split('$')[1]
 
-        conn = create_connection()
+        conn = create_connection() 
         cursor = conn.cursor()
         cursor.execute(f"""SELECT people FROM classes WHERE class = ?""", (cl_name,))
         num = cursor.fetchone()
         cursor.close()
         conn.close()
         
-        # Проверяем, есть ли данные
+        
         if num is not None:
-            people_count = num[0]  # Получаем количество людей
+            people_count = num[0]  
         else:
-            people_count = 0  # Если данных нет, устанавливаем 0
+            people_count = 0  
 
         admin_bot.edit_message_text(
             chat_id=ADMIN_CHAT_ID, 
             message_id=call.message.message_id,
-            text=f'Класс {cl_name}, количество человек {people_count}',  # Используем people_count
+            text=f'Класс {cl_name}, количество человек {people_count}',  
             reply_markup=create_keyboard_class(cl_name)
         )
     
@@ -734,7 +744,7 @@ def add_users_ex(message):
         file_info = admin_bot.get_file(message.document.file_id)
         downloaded_file = admin_bot.download_file(file_info.file_path)
 
-        # Сохраняем файл на диск
+        
         file_path = os.path.join(XLSX_PATH, message.document.file_name)
         
         with open(file_path, 'wb') as new_file:
@@ -744,7 +754,7 @@ def add_users_ex(message):
 
         admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text=text)       
 
-        # Удаляем файл после обработки
+        
         os.remove(file_path)
     else: 
         admin_bot.send_message(chat_id=ADMIN_CHAT_ID,

@@ -3,3 +3,7 @@
 .env
 *.xlsx
 *.idea
+obed_bot.py
+scripts
+.vscode
+*.sh

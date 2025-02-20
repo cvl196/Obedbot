@@ -48,8 +48,7 @@ elif 21 <= current_hour < 23:
     greeting = "Доброй ночи"
 else:
     greeting = "Здравствуйте"  
-print(users_to_send)
-bot.send_message(ADMIN_CHAT_ID, f"началось голосование {greeting}, {table_name}", parse_mode='HTML')
+
 try:
     for user in users_to_send:
         last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0]
@@ -64,7 +63,7 @@ try:
                          text=f"""{greeting}, проголосуйте пожалуйста
     Вы будете завтра обедать?""",
                          reply_markup=create_keyboard1())
-        bot.send_message(ADMIN_CHAT_ID, f"Уведомление отправленно {user}", parse_mode='HTML')
+        
 
         # Добавляем ID отправленного сообщения в таблицу users
         cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (message.message_id, user))
