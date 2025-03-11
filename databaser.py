@@ -543,3 +543,5 @@ def oneuse():
     cursor.close()
     conn.close()
 
+drop_table('lunch_24_02_2025')
+drop_table('lunch_25_02_2025')
