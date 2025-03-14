@@ -79,10 +79,11 @@
 3. Запуск служб
 ````
 sudo systemctl daemon-reload
-sudo systemctl start school-bot
-sudo systemctl start school-admin-bot
 sudo systemctl enable school-bot
 sudo systemctl enable school-admin-bot
+sudo systemctl start school-bot
+sudo systemctl start school-admin-bot
+
 ````
 
 ***Настройка базы данных***
