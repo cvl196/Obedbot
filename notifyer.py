@@ -48,7 +48,7 @@ elif 21 <= current_hour < 23:
     greeting = "Доброй ночи"
 else:
     greeting = "Здравствуйте"  
-
+admin_bot.send_message(ADMIN_CHAT_ID, f"{greeting}, голосование началось")
 try:
     for user in users_to_send:
         last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0]
@@ -60,8 +60,8 @@ try:
         else:
             print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
         message = bot.send_message(chat_id=user,
-                         text=f"""{greeting}, проголосуйте пожалуйста
-    Вы будете завтра обедать?""",
+                         text=f"""{greeting}, проголосуйте, пожалуйста,
+Вы будете завтра обедать?""",
                          reply_markup=create_keyboard1())
         
 

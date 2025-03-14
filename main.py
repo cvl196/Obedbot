@@ -1033,10 +1033,11 @@ def delete_last_msg(chat_id, msg):
 
 
 def create_keyboard1():
-    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
     keyboard.add(
         telebot.types.InlineKeyboardButton("Да", callback_data="yes"),
-        telebot.types.InlineKeyboardButton("Нет", callback_data="no")
+        telebot.types.InlineKeyboardButton("Нет", callback_data="no"),
+        telebot.types.InlineKeyboardButton("В главное меню", callback_data="back")
     )
     return keyboard
 
@@ -1931,7 +1932,7 @@ def get_name(message):
     else:
         bot.send_message(
             chat_id = message.chat.id,
-            text = 'Для регистрации требуется username вашего телеграм аккаунта. Пожайлутста укажите его в своем профиле телеграм и попробуйте зарегестрироваться заново',
+            text = 'Для регистрации требуется username вашего телеграм аккаунта. Пожалуйста укажите его в своем профиле телеграм и попробуйте зарегестрироваться заново',
             reply_markup = create_keyboard_reg1()
         )
    

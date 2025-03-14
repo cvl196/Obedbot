@@ -309,6 +309,10 @@ def creating_class(message):
         admin_bot.send_message(chat_id=ADMIN_CHAT_ID,
                                text=f'Такой класс уже существует'
                                )
+    elif not check_class(class_name):
+         admin_bot.send_message(chat_id=ADMIN_CHAT_ID,
+                               text=f'Ошибка, введите название класса корректно'
+                               )
     else: 
         cursor.execute(f"""INSERT INTO classes (class, people)
                        VALUES (?, ?)""", (class_name, 0))  # Используем class_name вместо message
@@ -343,56 +347,78 @@ def opening_profile(message):
         admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Выберите пользователя", reply_markup=keyboard)
     conn.close()   
 
+def check_class(clas):
+    # Проверяем длину класса
+    if len(clas) < 2 or len(clas) > 3:
+        return False
+        
+    
+    if not clas[0].isdigit():
+        return False
+    
+    grade = int(clas[0]) if len(clas) == 2 else int(clas[0:2])
+    if grade < 1 or grade > 11:
+        return False
+        
+    
+    if not clas[-1].isalpha():
+        return False
+        
+    return True
+
 @admin_bot.message_handler(commands=['profiles'])
 def profiles(message):
-    admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите информацию о пользователе ")
-    
-    admin_bot.register_next_step_handler(message, opening_profile)
+    if message.chat.id == int(ADMIN_CHAT_ID):
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите информацию о пользователе ")
+        admin_bot.register_next_step_handler(message, opening_profile)
 
 @admin_bot.message_handler(commands=['unblock'])
 def unblock_user_command(message):
-    admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите user_name или телефон пользователя для разблокировки")
-    admin_bot.register_next_step_handler(message, unblocking_user)
+    if message.chat.id == int(ADMIN_CHAT_ID):
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите user_name или телефон пользователя для разблокировки")
+        admin_bot.register_next_step_handler(message, unblocking_user)
 
 @admin_bot.message_handler(commands=['classes'])
-def show_classes (message):
-    admin_bot.send_message(chat_id=ADMIN_CHAT_ID, 
-                           text='Выберите класс:',
-                           reply_markup=create_keyboard_classes())
+def show_classes(message):
+    if message.chat.id == int(ADMIN_CHAT_ID):
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID, 
+                             text='Выберите класс:',
+                             reply_markup=create_keyboard_classes())
     
 @admin_bot.message_handler(commands=['add_users'])
-def add_users (message):
-    current_directory = XLSX_PATH
-    file_name =  os.path.join(current_directory, 'xlsx', 'pattern.xlsx')
+def add_users(message):
+    if message.chat.id == int(ADMIN_CHAT_ID):
+        current_directory = XLSX_PATH
+        file_name = os.path.join(current_directory, 'xlsx', 'pattern.xlsx')
 
-    with open (file_name,'rb') as file: 
-        admin_bot.send_document(chat_id=ADMIN_CHAT_ID,
-                                document= file)
+        with open(file_name,'rb') as file: 
+            admin_bot.send_document(chat_id=ADMIN_CHAT_ID,
+                                  document=file)
 
-    admin_bot.send_message(chat_id=ADMIN_CHAT_ID, 
-                           text=f"""Чтобы добавить несколько людей сразу заполните их данные в этот файл и отправьте его боту
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID, 
+                             text="""Чтобы добавить несколько людей сразу заполните их данные в этот файл и отправьте его боту
 В поле телефон укажите телефон в формате 79999999999
-В поле льготник укажите + или -"""
-                           )
-    admin_bot.register_next_step_handler(message, add_users_ex)
-
+В поле льготник укажите + или -""")
+        admin_bot.register_next_step_handler(message, add_users_ex)
 
 @admin_bot.message_handler(commands=['users_excel'])
-def send_users (message):
-    output_file = get_excel_users_admin(message.chat.id)
-    with open(output_file, 'rb') as file:
-                admin_bot.send_document(
+def send_users(message):
+    if message.chat.id == int(ADMIN_CHAT_ID):
+        output_file = get_excel_users_admin(message.chat.id)
+        with open(output_file, 'rb') as file:
+            admin_bot.send_document(
                 chat_id=message.chat.id,
                 document=file
-                )
-    if os.path.exists(output_file):
-                os.remove(output_file)
-
+            )
+        if os.path.exists(output_file):
+            os.remove(output_file)
 
 @admin_bot.message_handler(commands=['create_class'])
 def create_class(message):
-    admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите класс который хотите создать")
-    admin_bot.register_next_step_handler(message, creating_class)
+    if message.chat.id == int(ADMIN_CHAT_ID):
+        
+        admin_bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите класс который хотите создать")
+        admin_bot.register_next_step_handler(message, creating_class)
 
 @admin_bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
