@@ -1,8 +1,7 @@
-import telebot
 
+import telebot
 import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
-
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import pytz
@@ -11,6 +10,10 @@ from sqlite3 import Error
 import os
 from main import create_connection,get_waitlist_info,create_keyboard_back,create_keyboard_reg1,get_user_info, db_check_id, get_excel_users_admin,clean_req_send  
 import pandas as pd
+from main import db_check_status_pupil, create_keyboard1
+
+
+
 
 
 
@@ -365,6 +368,82 @@ def check_class(clas):
         return False
         
     return True
+
+def notify():
+    load_dotenv()
+    TOKEN = os.getenv('TOKEN')
+    ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
+    ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+
+    bot = telebot.TeleBot(TOKEN)
+    admin_bot = telebot.TeleBot(ADMIN_TOKEN)
+
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    users_to_send = []
+
+    cursor.execute(F"""SELECT chat_id FROM users""")
+    users = cursor.fetchall()
+
+    tz = pytz.timezone('Asia/Yekaterinburg')
+    tomorrow = datetime.now(tz) + timedelta(days=1)
+    date = tomorrow.strftime("%d_%m_%Y")
+    table_name = f"lunch_{date}"
+
+    cursor.execute(f"""SELECT chat_id FROM {table_name}""")
+    voted_users = cursor.fetchall()
+
+    for user in users:
+        if user not in voted_users and db_check_status_pupil(user[0]):
+            users_to_send.append(user[0])
+
+    current_hour = datetime.now(tz).hour
+
+    if current_hour < 17:
+        greeting = "Добрый день"
+    elif 17 <= current_hour < 21:
+        greeting = "Добрый вечер"
+    elif 21 <= current_hour < 23:
+        greeting = "Доброй ночи"
+    else:
+        greeting = "Здравствуйте"
+    admin_bot.send_message(ADMIN_CHAT_ID, f"{greeting}, голосование началось")
+    try:
+        for user in users_to_send:
+            last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0]
+            if last_msg:
+                try:
+                    bot.delete_message(chat_id=user, message_id=last_msg)
+                except Exception as e:
+                    print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  # Логируем ошибку
+            else:
+                print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
+            message = bot.send_message(chat_id=user,
+                                       text=f"""{greeting}, проголосуйте, пожалуйста,
+Вы будете завтра обедать?""",
+                                       reply_markup=create_keyboard1())
+
+            # Добавляем ID отправленного сообщения в таблицу users
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (message.message_id, user))
+            conn.commit()
+
+        cursor.execute(f"SELECT chat_id FROM users WHERE status = ?", ("teacher",))
+        teachers = cursor.fetchall()
+        for teacher in teachers:
+            cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (False, teacher[0]))
+
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+    except:
+        bot.send_message(ADMIN_CHAT_ID, f"Произошла ошибка")
+
+@admin_bot.message_handler(commands=['vote'])
+def profiles(message):
+    notify()
+
 
 @admin_bot.message_handler(commands=['profiles'])
 def profiles(message):
