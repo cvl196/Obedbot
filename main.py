@@ -17,8 +17,8 @@ import logging
 import traceback
 
 # Получаем текущий путь
-current_dir = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(current_dir, 'lunch_database.db')
+db_path = os.path.join(os.getenv('XLSX_PATH', '/app/xlsx_reports'), 'school_bot.db')
+DB_PATH = os.path.join(db_path, 'lunch_database.db')
 
 # Токены
 load_dotenv()

@@ -9,6 +9,7 @@ services:
       - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
+      - ./db_data:/app/db_data  # Добавьте этот том для базы данных
     restart: unless-stopped
 
   school-admin-bot:
@@ -19,6 +20,7 @@ services:
       - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
+      - ./db_data:/app/db_data  # Добавьте этот том для базы данных
     restart: unless-stopped
 
   school-notifyer:

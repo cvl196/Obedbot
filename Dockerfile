@@ -42,5 +42,10 @@ RUN echo '#!/bin/bash' > /app/start.sh && \
     echo 'cron && tail -f /var/log/cron.log' >> /app/start.sh && \
     chmod +x /app/start.sh
 
+RUN mkdir -p /app/xlsx_reports /app/db_data
+
+# Установите правильные права доступа
+RUN chmod 755 /app/xlsx_reports /app/db_data
+
 # Команда по умолчанию
 CMD ["python", "main.py"]
