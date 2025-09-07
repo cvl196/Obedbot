@@ -15,6 +15,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Side  
 import logging
 import traceback
+from pathlib import Path
 
 # Получаем текущий путь
 db_path = os.path.join(os.getenv('XLSX_PATH', '/app/xlsx_reports'), 'school_bot.db')
@@ -30,6 +31,11 @@ XLSX_PATH = os.getenv('XLSX_PATH')
 bot = telebot.TeleBot(TOKEN)
 admin_bot = telebot.TeleBot(ADMIN_TOKEN)
 
+def ensure_db_directory():
+    db_dir = os.path.dirname(DB_PATH)
+    Path(db_dir).mkdir(parents=True, exist_ok=True)
+    # Установите правильные права доступа
+    os.chmod(db_dir, 0o755)
 
 
 def create_connection():

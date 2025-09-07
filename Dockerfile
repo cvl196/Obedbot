@@ -47,5 +47,12 @@ RUN mkdir -p /app/xlsx_reports /app/db_data
 # Установите правильные права доступа
 RUN chmod 755 /app/xlsx_reports /app/db_data
 
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+# Добавьте в Dockerfile
+RUN mkdir -p /app/xlsx_reports
+RUN sqlite3 /app/xlsx_reports/lunch_database.db "VACUUM;"
+RUN chmod 755 /app/xlsx_reports/lunch_database.db
 # Команда по умолчанию
 CMD ["python", "main.py"]
