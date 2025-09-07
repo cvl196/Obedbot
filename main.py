@@ -1243,6 +1243,7 @@ def create_keyboard_classes_lunch_day(clas):
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    print('+1')
     init_db()
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
