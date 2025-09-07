@@ -1,0 +1,33 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  school-bot:
+    build: .
+    container_name: school-bot
+    env_file:
+      - .env
+    volumes:
+      - ./xlsx_reports:/app/xlsx_reports
+    restart: unless-stopped
+    # Команда по умолчанию из Dockerfile: python main.py
+
+  school-admin-bot:
+    build: .
+    container_name: school-admin-bot
+    env_file:
+      - .env
+    volumes:
+      - ./xlsx_reports:/app/xlsx_reports
+    command: python admin_main.py
+    restart: unless-stopped
+
+  notifyer:
+    build: .
+    container_name: school-notifyer
+    env_file:
+      - .env
+    volumes:
+      - ./xlsx_reports:/app/xlsx_reports
+    command: supercronic /etc/crontabs/root
+    restart: unless-stopped
