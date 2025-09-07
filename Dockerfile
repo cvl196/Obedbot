@@ -8,7 +8,7 @@ RUN rm -f /etc/apt/sources.list && \
     echo "deb http://mirror.yandex.ru/debian bookworm-updates main" >> /etc/apt/sources.list && \
     echo "deb http://security.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list
 
-# Устанавливаем cron, tzdata и дополнительные пакеты
+# Устанавливаем cron и tzdata
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cron \
     tzdata \
