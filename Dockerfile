@@ -1,33 +1,38 @@
-# Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
-    gcc \
+# Меняем источники пакетов на зеркало Яндекса (для стабильной загрузки)
+RUN rm -f /etc/apt/sources.list && \
+    echo "deb http://mirror.yandex.ru/debian bookworm main" >> /etc/apt/sources.list && \
+    echo "deb http://mirror.yandex.ru/debian bookworm-updates main" >> /etc/apt/sources.list && \
+    echo "deb http://security.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list
+
+# Устанавливаем ТОЛЬКО curl (gcc не нужен!)
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Установка supercronic для cron в контейнере
+# Устанавливаем supercronic
 RUN curl -fsSLO https://github.com/aptible/supercronic/releases/download/v0.2.21/supercronic-linux-amd64 \
     && chmod +x supercronic-linux-amd64 \
     && mv supercronic-linux-amd64 /usr/local/bin/supercronic
 
-# Копируем зависимости
+# Установка Python-зависимостей
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем всё приложение
+# Копирование всего проекта
 COPY . .
 
-# Создаём папку для отчётов
+# Создание папки для отчётов
 RUN mkdir -p /app/xlsx_reports
 
-# Переменная по умолчанию (можно переопределить в .env)
+# Переменная окружения
 ENV XLSX_PATH=/app/xlsx_reports
 
-# Копируем crontab для notifyer
+# Копирование crontab
 COPY crontab /etc/crontabs/root
 
-# По умолчанию запускаем основной бот
+# Команда по умолчанию
 CMD ["python", "main.py"]
