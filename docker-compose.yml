@@ -6,9 +6,11 @@ services:
     container_name: school-bot
     command: python main.py
     env_file:
-      - .env.example
+      - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
+    environment:
+      - TZ=Asia/Yekaterinburg
     restart: unless-stopped
 
   school-admin-bot:
@@ -16,17 +18,21 @@ services:
     container_name: school-admin-bot
     command: python admin_main.py
     env_file:
-      - .env.example
+      - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
+    environment:
+      - TZ=Asia/Yekaterinburg
     restart: unless-stopped
 
   school-notifyer:
     build: .
     container_name: school-notifyer
-    command: supercronic /etc/crontabs/root
+    command: /app/start.sh
     env_file:
-      - .env.example
+      - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
+    environment:
+      - TZ=Asia/Yekaterinburg
     restart: unless-stopped

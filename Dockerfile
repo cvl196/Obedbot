@@ -8,28 +8,39 @@ RUN rm -f /etc/apt/sources.list && \
     echo "deb http://mirror.yandex.ru/debian bookworm-updates main" >> /etc/apt/sources.list && \
     echo "deb http://security.debian.org/debian-security bookworm-security main" >> /etc/apt/sources.list
 
-# Устанавливаем curl и supercronic
+# Устанавливаем cron, tzdata и дополнительные пакеты
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    curl \
+    cron \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем supercronic для планировщика задач
-RUN curl -fsSLO https://github.com/aptible/supercronic/releases/download/v0.2.21/supercronic-linux-amd64 \
-    && chmod +x supercronic-linux-amd64 \
-    && mv supercronic-linux-amd64 /usr/local/bin/supercronic
+# Устанавливаем временную зону для Екатеринбурга
+RUN ln -fs /usr/share/zoneinfo/Asia/Yekaterinburg /etc/localtime
+RUN echo "Asia/Yekaterinburg" > /etc/timezone
 
-# Копируем зависимости и устанавливаем их
+# Установка Python-зависимостей
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем весь проект
+# Копирование всего проекта
 COPY . .
 
-# Создаем папку для отчетов
+# Создание папки для отчётов
 RUN mkdir -p /app/xlsx_reports
 
-# Копируем crontab для notifyer
-COPY crontab /etc/crontabs/root
-
-# Переменные окружения
+# Переменная окружения
 ENV XLSX_PATH=/app/xlsx_reports
+ENV TZ=Asia/Yekaterinburg
+
+# Настраиваем cron
+COPY crontab /etc/cron.d/obedbot-cron
+RUN chmod 0644 /etc/cron.d/obedbot-cron
+RUN touch /var/log/cron.log
+
+# Создаем скрипт для запуска cron
+RUN echo '#!/bin/bash' > /app/start.sh && \
+    echo 'cron && tail -f /var/log/cron.log' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+# Команда по умолчанию
+CMD ["python", "main.py"]
