@@ -9,8 +9,6 @@ services:
       - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
-    environment:
-      - TZ=Asia/Yekaterinburg
     restart: unless-stopped
 
   school-admin-bot:
@@ -21,8 +19,6 @@ services:
       - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
-    environment:
-      - TZ=Asia/Yekaterinburg
     restart: unless-stopped
 
   school-notifyer:
@@ -33,6 +29,4 @@ services:
       - .env
     volumes:
       - ./xlsx_reports:/app/xlsx_reports
-    environment:
-      - TZ=Asia/Yekaterinburg
     restart: unless-stopped
