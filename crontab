@@ -1,5 +1,0 @@
-# Запуск notifyer.py ежедневно кроме субботы в 16:00, 19:00 и 21:00
-0 16,19,21 * * 0-5 root /usr/local/bin/python /app/notifyer.py >> /var/log/cron.log 2>&1
-
-# Для тестирования - раскомментируйте строку ниже (запуск каждую минуту)
-# * * * * * root /usr/local/bin/python /app/notifyer.py >> /var/log/cron.log 2>&1

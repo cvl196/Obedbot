@@ -2,7 +2,6 @@ import os
 os.environ['OPENBLAS_NUM_THREADS'] = '1'   
 
 import json
-from dotenv import load_dotenv
 import telebot
 from datetime import datetime, timedelta
 import pytz
@@ -15,10 +14,11 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Side  
 import logging
 import traceback
-from pathlib import Path
+from dotenv import load_dotenv
 
-# Получаем текущий путь
-db_path = os.path.join(os.getenv('XLSX_PATH', '/app/xlsx_reports'), 'school_bot.db')
+
+
+db_path = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(db_path, 'lunch_database.db')
 
 # Токены
@@ -31,11 +31,7 @@ XLSX_PATH = os.getenv('XLSX_PATH')
 bot = telebot.TeleBot(TOKEN)
 admin_bot = telebot.TeleBot(ADMIN_TOKEN)
 
-def ensure_db_directory():
-    db_dir = os.path.dirname(DB_PATH)
-    Path(db_dir).mkdir(parents=True, exist_ok=True)
-    # Установите правильные права доступа
-    os.chmod(db_dir, 0o755)
+
 
 
 def create_connection():
@@ -47,12 +43,10 @@ def create_connection():
         return None
 
 def init_db():
-    
-    
     if not os.path.exists(DB_PATH):
         
         open(DB_PATH, 'a').close()
-        print("База данных создана")
+       
 
     conn = create_connection()
     if conn:
@@ -106,7 +100,7 @@ def init_db():
                 )
             ''')
             conn.commit()
-            print("База данных и таблицы инициализированы")
+            
         except Error as e:
             print(f"Ошибка при инициализации базы данных: {e}")
         finally:
@@ -1036,6 +1030,12 @@ def delete_last_msg(chat_id, msg):
     cursor.close()
     conn.close()
 
+def create_xlsx_folder(): 
+    try: 
+        os.mkdir('xlsx')
+    except: 
+        pass
+
 
 
 def create_keyboard1():
@@ -1139,7 +1139,7 @@ def create_keyboard_main_teacher():
 def create_keyboard_main_teacher_add():
     keyboard = telebot.types.InlineKeyboardMarkup()
     keyboard.add(telebot.types.InlineKeyboardButton("Получить данные пользователей", callback_data="get_users_exel"))    
-    keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
+    # keyboard.add(telebot.types.InlineKeyboardButton("Получить отчет", callback_data="get_report"))
     keyboard.add(telebot.types.InlineKeyboardButton("Получить информацию о обедах других классов", callback_data="other_classes"))
     keyboard.add(telebot.types.InlineKeyboardButton("Мой профиль", callback_data="profile_user"))
     keyboard.add(telebot.types.InlineKeyboardButton("В главное меню", callback_data="back"))
@@ -1173,6 +1173,7 @@ def create_keyboard_classes_reg():
 
     for cl in classes: 
         keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class_reg${cl[0]}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text = 'В главное меню',callback_data = "back"))
     
     return keyboard
 
@@ -1234,7 +1235,6 @@ def create_keyboard_classes_lunch_day(clas):
     tomorrow = datetime.now(tz) + timedelta(days=1)
     today = datetime.now(tz)
     
-    # Проверка на воскресенье для обоих дней
     if tomorrow.weekday() == 6:
         tomorrow = tomorrow + timedelta(days=1)
     
@@ -1249,14 +1249,13 @@ def create_keyboard_classes_lunch_day(clas):
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    print('+1')
+   
     init_db()
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
-    
-    # Если завтра воскресенье, переносим на понедельник
-    if tomorrow.weekday() == 6:  # 6 = воскресенье
-        tomorrow = tomorrow + timedelta(days=1)  # +1 день чтобы получить понедельник
+   
+    if tomorrow.weekday() == 6:  
+        tomorrow = tomorrow + timedelta(days=1)  
     
     date = tomorrow.strftime("%d.%m")
     create_table(date)
@@ -1322,7 +1321,7 @@ def start(message):
     
     
 
-# Обработчик callback-запросов
+
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
     tz = pytz.timezone('Asia/Yekaterinburg')
@@ -2081,4 +2080,5 @@ def get_report(message, grade):
 
 if __name__ == '__main__':
     init_db()
+    create_xlsx_folder()
     bot.polling(none_stop=True)

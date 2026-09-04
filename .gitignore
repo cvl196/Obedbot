@@ -1,9 +1,13 @@
 
 *.db
-.env.example
 *.xlsx
 *.idea
 obed_bot.py
 scripts
 .vscode
 *.sh
+.env
+__pycache__/
+*.pyc
+tbvenv/
+lunch_database.db
