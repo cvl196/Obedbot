@@ -25,11 +25,11 @@ DB_PATH = os.path.join(db_path, 'lunch_database.db')
 load_dotenv()
 TOKEN = os.getenv('TOKEN')
 ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
-ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+ADMIN_CHAT_ID = int(os.getenv('ADMIN_CHAT_ID'))
 XLSX_PATH = os.getenv('XLSX_PATH')
 # Инициализация ботов
 bot = telebot.TeleBot(TOKEN)
-admin_bot = telebot.TeleBot(ADMIN_TOKEN)
+
 
 
 
@@ -168,6 +168,12 @@ def db_check_status_teacher(chat_id):
             conn.close()
             
             return False
+
+def db_check_status_admin(chat_id):
+    if chat_id == ADMIN_CHAT_ID: 
+        return True
+    else: 
+        return False
 
 def db_check_status_pupil_by_username(username):
     conn = create_connection()
@@ -1037,6 +1043,413 @@ def create_xlsx_folder():
         pass
 
 
+#админ функции 
+
+
+def delete_class(class_name):
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("DELETE FROM classes WHERE class = ?", (class_name,))
+        
+        cursor.execute("DELETE FROM users WHERE grade = ?", (class_name,))
+        
+        conn.commit()
+        print(f"Класс {class_name} и все его пользователи успешно удалены.")
+
+    except sqlite3.Error as e:
+        print(f"Произошла ошибка: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def add_users_ex(message):
+
+    file_extension = os.path.splitext(message.document.file_name)[1].lower()
+    if message.document.file_id and file_extension == '.xlsx': 
+        file_info = bot.get_file(message.document.file_id)
+        downloaded_file = bot.download_file(file_info.file_path)
+
+        
+        file_path = os.path.join(XLSX_PATH, message.document.file_name)
+        
+        with open(file_path, 'wb') as new_file:
+            new_file.write(downloaded_file)
+
+        text = users_accept(file_path)
+
+        bot.send_message(chat_id=ADMIN_CHAT_ID, text=text)       
+
+        
+        os.remove(file_path)
+    else: 
+        bot.send_message(chat_id=ADMIN_CHAT_ID,
+                               text='Произошла ошибка, попробуйте заново, проверьте файл, он долежн быть с расширением .xlsx')
+
+def user_accept(chat_id, role):
+    if role not in ['pupil', 'teacher']:
+        raise ValueError("Role must be either 'pupil' or 'teacher'.")
+
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    try:        
+
+        cursor.execute("""
+            SELECT first_name, last_name, grade, phone, chat_id, user_name, status, privil 
+            FROM users_waitlist 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        user_data = cursor.fetchone()
+
+        if user_data is None:
+            print(f"Пользователь с chat_id {chat_id} не найден в списке ожидания.")
+            return False
+
+        
+
+    
+
+        if user_data[5] is None:
+            user_name = 'Нет имени пользователя'
+        else:
+            user_name = user_data[5]
+        if db_check_id(chat_id=chat_id):
+            cursor.execute("""
+                UPDATE users 
+                SET first_name = ?,
+                    last_name = ?,
+                    grade = ?,
+                    phone = ?,
+                    user_name = ?,
+                    status = ?,
+                    privil = ?
+                WHERE chat_id = ?
+            """, (user_data[0], user_data[1], user_data[2], user_data[3], user_name, role, user_data[7], user_data[4]))
+        
+        else:
+            cursor.execute("""
+                INSERT INTO users (first_name, last_name, grade, phone, chat_id, user_name, status, privil)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (user_data[0], user_data[1], user_data[2], user_data[3], user_data[4], user_name, role, user_data[7]))
+
+       
+        cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
+        if role == 'pupil':
+            cursor.execute("UPDATE classes SET people = people + 1 WHERE class = ?", (user_data[2],))
+        conn.commit()
+        print(f"Пользователь с chat_id {chat_id} одобрен и перемещен в users.")
+        return True
+
+    except sqlite3.Error as e:
+        print(f"Произошла ошибка SQL: {e}")
+        bot.send_message(
+            chat_id=chat_id,
+            text='Произошла ошибка при регистрации, попробуйте еще раз',
+            reply_markup=create_keyboard_reg1()
+        )
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def user_delete(chat_id):
+    """Удаляет пользователя из таблицы users по chat_id."""
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            DELETE 
+            FROM users 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        conn.commit()
+
+        cursor.execute("SELECT grade FROM users WHERE chat_id = ?", (chat_id,))
+        user_data = cursor.fetchone()
+
+        # Уменьшаем количество людей в классе на 1
+        if user_data is not None:
+            cursor.execute("UPDATE classes SET people = people - 1 WHERE class = ?", (user_data[0],))
+
+        # Удаляем пользователя из таблицы users
+        cursor.execute("DELETE FROM users WHERE chat_id = ?", (chat_id,))
+        
+        # Проверяем количество удаленных строк
+        if cursor.rowcount == 0:
+            print(f"No user found with chat_id {chat_id}.")
+        else:
+            print(f"User with chat_id {chat_id} has been deleted.")
+
+        # Сохраняем изменения
+        conn.commit()
+
+    except sqlite3.Error as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Закрываем соединение
+        cursor.close()
+        conn.close()
+
+def user_reject(chat_id):
+    conn = create_connection()
+    cursor = conn.cursor()    
+    cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
+    conn.commit()
+    conn.close()
+  
+def block_user(chat_id):   
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+            DELETE 
+            FROM users 
+            WHERE chat_id = ?
+        """, (chat_id,))
+        conn.commit()
+
+        cursor.execute("SELECT chat_id, user_name, phone FROM users_waitlist WHERE chat_id = ?", (chat_id,))
+        user_data = cursor.fetchone()
+
+        if user_data is None:
+            print(f"Пользователь с chat_id {chat_id} не найден в списке ожидания.")
+            return
+
+        # Добавляем пользователя в таблицу заблокированных
+        cursor.execute("""
+            INSERT INTO blocked_users (chat_id, user_name, phone)  
+            VALUES (?, ?, ?)
+        """, (chat_id, user_data[1], user_data[2]))
+
+        # Удаляем пользователя из списка ожидания
+        cursor.execute("DELETE FROM users_waitlist WHERE chat_id = ?", (chat_id,))
+
+        conn.commit()
+        print(f"Пользователь с chat_id {chat_id} заблокирован.")
+
+    except sqlite3.Error as e:
+        print(f"Произошла ошибка: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def unblock_user(info):
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM blocked_users WHERE chat_id = ? OR phone = ? OR user_name = ?", (info, info, info))
+    conn.commit()
+    conn.close()
+
+def unblocking_user(message):
+    info = message.text
+    unblock_user(info)
+    bot.send_message(chat_id=ADMIN_CHAT_ID, text=f"Пользователь {info} разблокирован")
+
+def users_accept(file):
+    
+    conn = create_connection()
+    cursor = conn.cursor()
+    varn = 0
+    
+    df = pd.read_excel(file)
+    users = df.values.tolist()
+    counter = 0
+    
+    for user in users:
+        us_check = 0
+        added_people = []
+        if len(user) != 6:
+            varn = 1
+            continue  
+
+        first_name = user[0]
+        last_name = user[1]
+        grade = user[2]
+        phone = user[3]
+        username = user[4]
+        privil = 1 if user[5] == '+' else 0  
+
+        
+        cursor.execute("SELECT COUNT(*) FROM users WHERE user_name = ?", (username,))
+        exists = cursor.fetchone()[0]
+
+        cursor.execute("SELECT * FROM classes WHERE class = ?", (grade,))
+        if cursor.fetchone() is None:
+            exists = 1
+        
+        if username is not None: 
+            us_check = 1 
+
+        if exists == 0 and us_check != 0:  
+            cursor.execute(
+                        "INSERT INTO users (first_name, last_name, grade, phone, status, user_name, privil) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (first_name, last_name, grade, phone, 'pupil', username, privil))
+
+
+            added_people.append(f"{first_name} {last_name}")
+            counter += 1       
+       
+    
+    conn.commit()
+    conn.close()
+    text = ''
+    if varn: 
+        text += 'Несколько пользователей не добавленны\n'
+    text += f'Человек добавлено: {counter}\n'
+    text += f'Успешно добавленны:\n'
+    for person in added_people: 
+        text += f'{person}\n'
+    return text
+
+def creating_class(message): 
+
+    class_name = message.text.upper()  
+    conn = create_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute(f"""SELECT class FROM classes WHERE class = ?""", (class_name,))
+    clas = cursor.fetchone()
+    
+    if clas: 
+        bot.send_message(chat_id=ADMIN_CHAT_ID,
+                               text=f'Такой класс уже существует'
+                               )
+    elif not check_class(class_name):
+        bot.send_message(chat_id=ADMIN_CHAT_ID,
+                               text=f'Ошибка, введите название класса корректно'
+                               )
+    else: 
+        cursor.execute(f"""INSERT INTO classes (class, people)
+                       VALUES (?, ?)""", (class_name, 0))  
+
+        bot.send_message(chat_id=ADMIN_CHAT_ID,
+                               text=f'Вы успешно создали класс {class_name}'
+                               )
+        conn.commit()
+    
+    cursor.close()
+    conn.close()
+
+def opening_profile(message):
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    par = message.text
+
+    cursor.execute("""SELECT first_name, last_name, chat_id, user_name, status, phone FROM users 
+                   WHERE first_name = ?
+                   OR last_name = ? 
+                   OR chat_id = ? 
+                   OR user_name = ?
+                   OR phone = ?""", 
+
+                   (par, par, par, par, par))    
+    users = cursor.fetchall()
+    if len(users) == 0:
+        bot.send_message(chat_id=ADMIN_CHAT_ID, text="Пользователей по данным не найдено",reply_markup=admin_create_keyboard_close())
+    else:
+        keyboard = admin_create_keyboard_users(users)
+        bot.send_message(chat_id=ADMIN_CHAT_ID, text="Выберите пользователя", reply_markup=keyboard)
+    conn.close()   
+
+def check_class(clas):
+
+    if len(clas) < 2 or len(clas) > 3:
+        return False
+        
+    
+    if not clas[0].isdigit():
+        return False
+    
+    grade = int(clas[0]) if len(clas) == 2 else int(clas[0:2])
+    if grade < 1 or grade > 11:
+        return False
+        
+    
+    if not clas[-1].isalpha():
+        return False
+        
+    return True
+
+def notify():
+    load_dotenv()
+    TOKEN = os.getenv('TOKEN')
+    ADMIN_TOKEN = os.getenv('ADMIN_TOKEN')
+    ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
+
+    bot = telebot.TeleBot(TOKEN)
+    admin_bot = telebot.TeleBot(ADMIN_TOKEN)
+
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    users_to_send = []
+
+    cursor.execute(F"""SELECT chat_id FROM users""")
+    users = cursor.fetchall()
+
+    tz = pytz.timezone('Asia/Yekaterinburg')
+    tomorrow = datetime.now(tz) + timedelta(days=2)
+    date = tomorrow.strftime("%d_%m_%Y")
+    table_name = f"lunch_{date}"
+
+    try:
+        cursor.execute(f"""SELECT chat_id FROM {table_name}""")
+        voted_users = cursor.fetchall()
+    except: 
+        voted_users = []
+
+    for user in users:
+        if user not in voted_users and db_check_status_pupil(user[0]):
+            users_to_send.append(user[0])
+
+    current_hour = datetime.now(tz).hour
+
+    if current_hour < 17:
+        greeting = "Добрый день"
+    elif 17 <= current_hour < 21:
+        greeting = "Добрый вечер"
+    elif 21 <= current_hour < 23:
+        greeting = "Доброй ночи"
+    else:
+        greeting = "Здравствуйте"
+    admin_bot.send_message(ADMIN_CHAT_ID, f"{greeting}, голосование началось")
+    try:
+        for user in users_to_send:
+            last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0]
+            if last_msg:
+                try:
+                    bot.delete_message(chat_id=user, message_id=last_msg)
+                except Exception as e:
+                    print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  # Логируем ошибку
+            else:
+                print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
+            message = bot.send_message(chat_id=user,
+                                       text=f"""{greeting}, проголосуйте, пожалуйста,
+Вы будете завтра обедать?""",
+                                       reply_markup=create_keyboard1())
+
+            # Добавляем ID отправленного сообщения в таблицу users
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (message.message_id, user))
+            conn.commit()
+
+        cursor.execute(f"SELECT chat_id FROM users WHERE status = ?", ("teacher",))
+        teachers = cursor.fetchall()
+        for teacher in teachers:
+            cursor.execute("UPDATE users SET send_teacher = ? WHERE chat_id = ?", (False, teacher[0]))
+
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+    except:
+        bot.send_message(ADMIN_CHAT_ID, f"Произошла ошибка")
+
+#клавы
 
 def create_keyboard1():
     keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
@@ -1247,9 +1660,75 @@ def create_keyboard_classes_lunch_day(clas):
     keyboard.add(telebot.types.InlineKeyboardButton(text=f"{date.replace('_','.')}", callback_data=f"class_day_lunch${clas}${table_name}$tommorow"))
     return keyboard
 
+#админ клавы 
+def admin_create_keyboard_main(): 
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton("Запустить голосвание на завтра", callback_data="vote_admin"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Посмотреть информацию о пользователях", callback_data="profiles_admin"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Разблокировать пользователя", callback_data="unblock_admin"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Посмотреть классы", callback_data="classes_admin"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Добавить много пользователей с помощью эксель", callback_data="add_users_admin"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Посмотреть пользователей в эксель", callback_data="users_excel_admin"))
+    keyboard.add(telebot.types.InlineKeyboardButton("Создать новый класс", callback_data="create_class_admin"))
+    return keyboard
+
+def admin_create_keyboard_users(users):
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    for user in users:
+        name = f"{user[0]} {user[1]}"
+        keyboard.add(telebot.types.InlineKeyboardButton(text=name, callback_data=f"profile${user[2]}"))
+        
+    return keyboard
+
+def admin_create_keyboard_close():
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Закрыть", callback_data="close"))
+    return keyboard
+
+def admin_create_keyboard_delete_acception(chat_id):
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Подтвердить удаление пользователя", callback_data=f"delete${chat_id}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Закрыть", callback_data="close"))
+    return keyboard
+
+def admin_create_keyboard_profile(chat_id):
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Удалить", callback_data=f"delete_acception${chat_id}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Закрыть", callback_data="close"))
+    return keyboard
+
+def admin_create_keyboard_classes(): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""SELECT class FROM classes""")
+    classes = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+
+    for cl in classes: 
+        keyboard.add(telebot.types.InlineKeyboardButton(text=f"{cl[0]}", callback_data=f"class${cl[0]}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Закрыть", callback_data="close"))
+    return keyboard
+
+def admin_create_keyboard_class(name): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Удалить", callback_data=f"delete_class_accept${name}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Отмена", callback_data="close"))
+    return keyboard
+
+def admin_create_keyboard_class_accept(name): 
+    keyboard = telebot.types.InlineKeyboardMarkup(row_width=1)
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Удалить", callback_data=f"delete_class${name}"))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Отмена", callback_data="close"))
+    return keyboard
+
+
 @bot.message_handler(commands=['start'])
 def start(message):
-   
+
     init_db()
     tz = pytz.timezone('Asia/Yekaterinburg')
     tomorrow = datetime.now(tz) + timedelta(days=1)
@@ -1282,6 +1761,12 @@ def start(message):
                 f"Добрый день, {message.chat.first_name}! Выберите действие:",
                 reply_markup=create_keyboard_main_teacher()
             ))
+    elif db_check_status_admin(message.chat.id): 
+        delete_last_msg(message.chat.id, bot.send_message(
+            message.chat.id,
+            f"Добрый день, {message.chat.first_name}! Выберите действие:",
+            reply_markup=admin_create_keyboard_main()
+        ))
     
     elif db_check_username(f"@{message.chat.username}"):        
         chat_id = message.chat.id
@@ -1336,8 +1821,380 @@ def callback_handler(call):
     date = tomorrow.strftime("%d_%m_%Y")    
     table_name = f"lunch_{date}"
     table_name_today = f"lunch_{date_today}"
+        
+    if db_check_status_admin(call.message.chat.id):
+        if call.data == 'vote_admin': 
+            notify()
+        
+        elif call.data == 'profiles_admin': 
+            if call.message.chat.id == int(ADMIN_CHAT_ID):
+                bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите информацию о пользователе ")
+                bot.register_next_step_handler(call.message, opening_profile)
+        
+        elif call.data == 'unblock_admin':
+            if call.message.chat.id == int(ADMIN_CHAT_ID):
+                bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите user_name или телефон пользователя для разблокировки")
+                bot.register_next_step_handler(call.message, unblocking_user)
+                bot.register_next_step_handler(call.message, opening_profile)
+        
+        elif call.data == 'classes_admin':
+            if call.message.chat.id == int(ADMIN_CHAT_ID):
+                bot.send_message(chat_id=ADMIN_CHAT_ID, 
+                                    text='Выберите класс:',
+                                    reply_markup=admin_create_keyboard_classes())
+        
+        elif call.data == 'add_users_admin':
+            if call.message.chat.id == int(ADMIN_CHAT_ID):
+                    current_directory = XLSX_PATH
+                    file_name = os.path.join(current_directory, 'xlsx', 'pattern.xlsx')
+            
+                    with open(file_name,'rb') as file: 
+                        bot.send_document(chat_id=ADMIN_CHAT_ID,
+                                                document=file)
+            
+                    bot.send_message(chat_id=ADMIN_CHAT_ID, 
+                                        text="""Чтобы добавить несколько людей сразу заполните их данные в этот файл и отправьте его боту
+            В поле телефон укажите телефон в формате 79999999999
+            В поле льготник укажите + или -""")
+                    bot.register_next_step_handler(call.message, add_users_ex)
+
+        elif call.data == 'users_excel_admin':
+            if call.message.chat.id == int(ADMIN_CHAT_ID):
+                output_file = get_excel_users_admin(call.message.chat.id)
+                with open(output_file, 'rb') as file:
+                    bot.send_document(
+                        chat_id=call.message.chat.id,
+                        document=file
+                    )
+                if os.path.exists(output_file):
+                    os.remove(output_file)
+
+        elif call.data == 'create_class_admin':
+            if call.message.chat.id == int(ADMIN_CHAT_ID):
+                bot.send_message(chat_id=ADMIN_CHAT_ID, text="Введите класс который хотите создать")
+                bot.register_next_step_handler(call.message, creating_class)
+                
+        elif call.data.startswith('accept$'):
+            chat_id = call.data.split('$')[1]
+            winfo = get_waitlist_info(chat_id)
+            
+            if winfo is None:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="Ошибка: пользователь не найден в списке ожидания",
+                    reply_markup=create_keyboard_reg1()
+                )
+                return
+            
+            conn = create_connection()
+            cursor = conn.cursor()
+
+            
+            cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
+            last_msg = cursor.fetchone()
+            
+            if last_msg and last_msg[0]: 
+
+                bot.delete_message(chat_id=chat_id, 
+                                message_id = last_msg[0])
+            if db_check_id(chat_id=chat_id):
+                tmp_msg = bot.send_message(
+                    chat_id=chat_id,
+                    text="Ваш запрос на изменение данных принят. Данные успешно изменены!",
+                    reply_markup=create_keyboard_back()
+                )
+            else: 
+                tmp_msg = bot.send_message(
+                    chat_id=chat_id,
+                    text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
+                    reply_markup=create_keyboard_back()
+                )
+            tmp_msg = tmp_msg.message_id
+            
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
+            conn.commit()
+            conn.close()
+            checker = db_check_id(chat_id=chat_id)
+            if user_accept(chat_id, 'pupil'):
+
+                if checker:
+                    bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text=f"""Данные пользоваетля были успешно обновленны ✅
+Новые данные: 
+Статус: ученик
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }"""
+                    )
+                
+                else:
+                    bot.edit_message_text(
+                        chat_id=call.message.chat.id,
+                        message_id=call.message.message_id,
+                        text=f"""Пользователь был успешно добавлен ✅
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }"""
+                    )
+                
+            
+                clean_req_send(chat_id)
+
+
+
+            else:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text="Произошла ошибка при добавлении пользователя"                
+                )
+                clean_req_send(chat_id)
+        
+        elif call.data.startswith('block$'):        
+            chat_id = call.data.split('$')[1]
+            winfo = get_waitlist_info(chat_id)
+            block_user(chat_id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"""Пользователь был заблокирован
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }""")
+            bot.send_message(
+                chat_id=chat_id,
+                text="Вы были заблокированы, если блокировка произошла по ошибке, обратитесь к администратору",
+                reply_markup=create_keyboard_reg1()
+            )
+            clean_req_send(chat_id)
+            
+        elif call.data.startswith('reject$'):
+            winfo = get_waitlist_info(call.message.chat.id)
+            chat_id = call.data.split('$')[1]
+            user_reject(chat_id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"""Запрос от пользователя был отклонен
+Имя: {winfo[1]}
+Фамилия: {winfo[2]}
+Класс: {winfo[3]}
+Телефон: {winfo[4]}
+Имя пользователя: {winfo[6]}
+Льготник: {'Да' if winfo[7] else 'Нет' }"""
+            )
+            if db_check_id(call.message.chat.id):
+                text = "Ваш запрос на изменение данных отклонен, перепроверьте данные и отправьте запрос еще раз."
+                keyboard_1 = None
+            else:
+                text = "Ваш запрос на регистрацию отклонен, перепроверьте данные и отправьте запрос еще раз."
+                keyboard_1 = create_keyboard_reg1()
+            bot.send_message(
+                chat_id=chat_id,
+                text= text,
+                reply_markup= keyboard_1
+            )
+            clean_req_send(chat_id)
+        
+        elif call.data.startswith('accept_teacher$'):
+            chat_id = call.data.split('$')[1]
+            user_accept(chat_id,'teacher')
+
+            winfo = get_user_info(call.message.chat.id)
+            if db_check_id(chat_id=chat_id):
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"""Данные пользователя успешно обновленны!
+Новые данные:
+Статус: учитель
+Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}"""
+                )
+            else:             
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=f"""Пользователь был успешно добавлен как учитель ✅
+Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}"""
+                )
+            conn = create_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT last_msg FROM users  WHERE chat_id = ?", (chat_id,))
+            last_msg = cursor.fetchone()
+            if last_msg and last_msg[0]: 
+
+                bot.delete_message(chat_id=chat_id, 
+                                    message_id = last_msg[0])
+                
+            if db_check_id(chat_id=chat_id): 
+                tmp_msg = bot.send_message(
+                    chat_id=chat_id,
+                    text="Ваш запрос на изменнение данных принят.",
+                    reply_markup=create_keyboard_back()
+                )
+            else:
+                tmp_msg = bot.send_message(
+                    chat_id=chat_id,
+                    text="Ваш запрос на регистрацию принят. Вы можете использовать бота.",
+                    reply_markup=create_keyboard_back()
+                )
+            tmp_msg = tmp_msg.message_id
+                
+            cursor.execute("UPDATE users SET last_msg = ? WHERE chat_id = ?", (tmp_msg, chat_id))
+            conn.commit()
+            conn.close()
+
+            clean_req_send(chat_id)
+
+        elif call.data.startswith('delete$'):
+            chat_id = call.data.split('$')[1]
+            winfo = get_user_info(chat_id)
+            if winfo[6] == 'teacher':
+                status = 'Учитель'
+            else:
+                status = 'Ученик'
+            user_delete(chat_id)
+            bot.edit_message_text(chat_id=ADMIN_CHAT_ID, 
+                                        message_id=call.message.message_id,
+                                        text=f"""Пользователь удален:
+Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Статус: {status}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}
+Льготник: {'Да' if winfo[7] else 'Нет' }""",
+                                        reply_markup=admin_create_keyboard_close())
+
+        elif call.data.startswith('delete_acception$'):
+            chat_id = call.data.split('$')[1]
+            winfo = get_user_info(chat_id)
+            if winfo is not None:
+                if winfo[6] == 'teacher':
+                    status = 'Учитель'
+                else:
+                    status = 'Ученик'
+                bot.edit_message_text(chat_id=ADMIN_CHAT_ID,                                     
+                                    message_id=call.message.message_id,
+                                        text=f"""Вы уверенны что ходите удалить пользователя? 
+Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Статус: {status}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}
+Льготник: {'Да' if winfo[7] else 'Нет' }""",                                
+                                    reply_markup=admin_create_keyboard_delete_acception(chat_id))
+            
+            else: 
+                bot.edit_message_text(chat_id=ADMIN_CHAT_ID,                                     
+                                    message_id=call.message.message_id,
+                                    text=f"""Вы уверенны что ходите удалить пользователя?""",
+                                    reply_markup=admin_create_keyboard_delete_acception(chat_id))
+                
+
+        elif call.data.startswith('profile$'):
+            chat_id = call.data.split('$')[1]
+            
+            winfo = get_user_info(chat_id)
+            
+            if winfo is not None: 
+                if winfo[6] == 'teacher':
+                    status = 'Учитель'
+                else:
+                    status = 'Ученик'
+                bot.edit_message_text (chat_id=ADMIN_CHAT_ID, 
+                                            message_id=call.message.message_id,
+                                            text=f"""Имя: {winfo[2]}
+Фамилия: {winfo[3]}
+Класс: {winfo[4]}
+Статус: {status}
+Телефон: {winfo[5]}
+Имя пользователя: {winfo[7]}
+Льготник: {'Да' if winfo[8] else 'Нет' }""",
+                                            reply_markup=admin_create_keyboard_profile(chat_id))
+            else:
+                bot.edit_message_text (chat_id=ADMIN_CHAT_ID, 
+                                            message_id=call.message.message_id,
+                                            text=f"""Пользователь не найден""",
+                                            reply_markup=admin_create_keyboard_close())
+            
+        elif call.data.startswith('delete_class$'): 
+            cl_name = call.data.split('$')[1] 
+            conn = create_connection()
+            cursor = conn.cursor()
+            
+            # Удаляем всех пользователей с grade, совпадающим с названием класса
+            cursor.execute("DELETE FROM users WHERE grade = ?", (cl_name,))
+            
+            cursor.execute("DELETE FROM classes WHERE class = ?", (cl_name,))
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            bot.edit_message_text(chat_id=ADMIN_CHAT_ID,
+                                        message_id=call.message.message_id, 
+                                        text=f'Вы успешно удалили {cl_name}',
+                                        reply_markup=admin_create_keyboard_close())
+            
+        elif call.data.startswith('class$'): 
+
+            cl_name = call.data.split('$')[1]
+
+            conn = create_connection() 
+            cursor = conn.cursor()
+            cursor.execute(f"""SELECT people FROM classes WHERE class = ?""", (cl_name,))
+            num = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            
+            
+            if num is not None:
+                people_count = num[0]  
+            else:
+                people_count = 0  
+
+            bot.edit_message_text(
+                chat_id=ADMIN_CHAT_ID, 
+                message_id=call.message.message_id,
+                text=f'Класс {cl_name}, количество человек {people_count}',  
+                reply_markup=admin_create_keyboard_class(cl_name)
+            )
+        
+        elif call.data.startswith('delete_class_accept$'):
+            cl_name = call.data.split('$')[1]
+            
+            
+            bot.edit_message_text(chat_id=call.message.chat.id, 
+                                    message_id=call.message.message_id, 
+                                    text=f"""Вы уверены, что хотите удалить класс? 
+    При удалении класса также будут удалены все ученики, относящиеся к нему""",
+                                    reply_markup=admin_create_keyboard_class_accept(cl_name))
     
-    if not db_check_id(call.message.chat.id) :
+        elif call.data == 'close':
+            bot.delete_message(chat_id=ADMIN_CHAT_ID, message_id=call.message.message_id)
+    
+    elif not db_check_id(call.message.chat.id):
         if call.data == "reg":
             if check_blocked_user(call.message.chat.id):
                 bot.edit_message_text(
@@ -1402,7 +2259,7 @@ def callback_handler(call):
             conn.commit()
             conn.close()
 
-            admin_bot.send_message(
+            bot.send_message(
                 ADMIN_CHAT_ID,
                 f"""Новый запрос на регистрацию
 Имя: {winfo[1]}
@@ -1436,7 +2293,7 @@ def callback_handler(call):
                 reply_markup=create_keyboard_reg1()
             )
             
-    elif db_check_status_teacher(call.message.chat.id) and db_check_id(call.message.chat.id):
+    elif db_check_id(call.message.chat.id) and db_check_status_teacher(call.message.chat.id):
         
         if call.data == "get_lunch_info_teacher":
             chat_id = call.message.chat.id
@@ -1469,7 +2326,7 @@ def callback_handler(call):
 
 
             )
-            admin_bot.send_message(
+            bot.send_message(
                 ADMIN_CHAT_ID,
                 f"""Новый запрос на изменение данных
 Имя: {winfo[1]}
@@ -1703,12 +2560,8 @@ def callback_handler(call):
                                 
                                  text=f"{e}",
                                  reply_markup=create_keyboard_back())
-            
-            
-
-
+                   
     elif db_check_id(call.message.chat.id) and db_check_status_pupil(call.message.chat.id):
-        
         if call.data == "yes":
             add_lunch_record(
                 table_name = table_name,
@@ -1782,7 +2635,7 @@ def callback_handler(call):
                 reply_markup = create_keyboard_back())
             
             
-            admin_bot.send_message(
+            bot.send_message(
                 ADMIN_CHAT_ID,
                 f"""Новый запрос на изменение данных
 Имя: {winfo[1]}
@@ -1913,7 +2766,6 @@ def callback_handler(call):
 Льготник: {'Да' if winfo[8] else 'Нет' }""",
                                         reply_markup = create_keyboard_profile())
         
-
     bot.answer_callback_query(call.id)
 
 ###регистрация
