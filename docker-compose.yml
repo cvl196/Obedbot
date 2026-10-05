@@ -10,13 +10,3 @@ services:
       - .env
     volumes:
       - ./lunch_database.db:/app/lunch_database.db
-
-  admin_bot:
-    build: .
-    container_name: admin_bot
-    command: python admin_main.py
-    restart: always
-    env_file:
-      - .env
-    volumes:
-      - ./lunch_database.db:/app/lunch_database.db

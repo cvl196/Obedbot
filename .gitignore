@@ -1,6 +1,6 @@
 
 *.db
-*.xlsx
+
 *.idea
 obed_bot.py
 scripts

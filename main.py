@@ -1382,7 +1382,7 @@ def notify():
     ADMIN_CHAT_ID = os.getenv('ADMIN_CHAT_ID')
 
     bot = telebot.TeleBot(TOKEN)
-    admin_bot = telebot.TeleBot(ADMIN_TOKEN)
+
 
     conn = create_connection()
     cursor = conn.cursor()
@@ -1417,7 +1417,7 @@ def notify():
         greeting = "Доброй ночи"
     else:
         greeting = "Здравствуйте"
-    admin_bot.send_message(ADMIN_CHAT_ID, f"{greeting}, голосование началось")
+
     try:
         for user in users_to_send:
             last_msg = cursor.execute("SELECT last_msg FROM users WHERE chat_id = ?", (user,)).fetchone()[0]
@@ -1425,9 +1425,9 @@ def notify():
                 try:
                     bot.delete_message(chat_id=user, message_id=last_msg)
                 except Exception as e:
-                    print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  # Логируем ошибку
+                    print(f"Ошибка при удалении сообщения для пользователя {user}: {e}")  
             else:
-                print(f"Нет сообщения для удаления у пользователя {user}")  # Логируем отсутствие last_msg
+                print(f"Нет сообщения для удаления у пользователя {user}")  
             message = bot.send_message(chat_id=user,
                                        text=f"""{greeting}, проголосуйте, пожалуйста,
 Вы будете завтра обедать?""",
